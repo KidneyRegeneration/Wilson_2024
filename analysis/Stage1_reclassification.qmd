@@ -1,0 +1,379 @@
+---
+title: "Stage 1 reclassification June 2023"
+date: "`r Sys.Date()`"
+author: "Sean Wilson"
+output:
+  rmdformats::readthedown:
+  highlight: kate
+  toc: true
+#output:
+#  prettydoc::html_pretty:
+#    theme: cayman
+#    highlight: github
+#    toc: true
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_dir = here::here("docs/"))})
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(rmdformats)
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+source(here::here("code/general_r_functions.R"))
+source(here::here("code/project_functions.R"))
+source(here::here("code/circle_plot.R"))
+source(here::here("code/datavis.R"))
+library(plotly)
+seed <- 250395
+## Global options
+options(max.print="1000")
+opts_chunk$set(echo=FALSE,
+	             cache=FALSE,
+               cache.lazy = FALSE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE,
+               fig.width = 9,
+               fig.height = 6,
+               dpi = 600,
+               echo=FALSE)
+opts_knit$set(width=500, root.dir = here::here())
+options(future.globals.maxSize = Inf)
+
+```
+
+## Goal
+
+Melissa and I have reevaluated the data in stage 1 and this document will update the data and generate figures for the manuscripts.
+
+
+## Load stage 1 data
+
+```{r}
+s1 <- read_rds("data/rds/Stage1.rds") 
+```
+
+Load the dimensional reduction that was previously generated, for consistency in graphing
+
+```{r}
+s1 <- NormalizeData(s1) %>% 
+  ScaleData() %>% 
+  CellCycleScoring(s.features = cc.genes.updated.2019$s.genes, g2m.features = cc.genes.updated.2019$g2m.genes)
+
+s1 <- SCTransform(s1, vars.to.regress = c("S.Score", "G2M.Score"), seed.use = 250395)
+
+s1 <- RunPCA(s1, npcs = 50, seed.use = 250395)
+s1 <- RunUMAP(s1, dims = 1:50, seed.use = 250395)
+```
+
+
+```{r}
+md <-read_csv("data/tables/RNAv_SW_CPT_1.csv")
+md <- as.data.frame(md)
+rownames(md) <- rownames(s1@meta.data)
+
+s1@reductions$umap.all <- s1@reductions$umap
+s1@reductions$umap <- CreateDimReducObject(as.matrix(md[, c("UMAP_1", "UMAP_2")]), key = "UMAP_", assay = "SCT")
+
+
+```
+
+```{r}
+DimPlot(s1, group.by = "age", reduction = "umap", label = T, label.size = 20) & NoAxes() +
+  theme(title = element_text(size = 0),
+        legend.text = element_text(size = 15))
+```
+
+
+```{r}
+png(res = 300, filename = "data/figures/Stage1_UMAP_chir.png",units = "mm", width = 200, height = 150)
+DimPlot(s1, group.by = "age", reduction = "umap", label = T, label.size = 15, pt.size = 1.5) & NoAxes() +
+  theme(title = element_text(size = 0),
+        legend.text = element_text(size = 30))
+dev.off()
+```
+
+Need to add the clusters from the original clustering analysis
+
+```{r}
+s1$SCT_snn_res.0.5 <- md$SCT_snn_res.0.5
+```
+
+
+```{r}
+DimPlot(s1, group.by = "SCT_snn_res.0.5", reduction = "umap", pt.size=1.5)
+```
+
+```{r}
+png(res = 300, filename = "data/figures/Stage1_UMAP_res05.png",units = "mm", width = 200, height = 150)
+DimPlot(s1, group.by = "SCT_snn_res.0.5", reduction = "umap", label = T, label.size = 15, pt.size = 1.5) & NoAxes() +
+  theme(title = element_text(size = 0),
+        legend.text = element_text(size = 30))
+dev.off()
+```
+
+Dotplot for markers we might expect to see at this stage
+
+```{r}
+StrDotPlot(s1, group.by = "SCT_snn_res.0.5", features = c("POU5F1", "EPCAM", "SOX2", "NANOG", "CDH1", "EOMES", "SOX10", "FGF8", "FGF17", "MIXL1", "T",
+                                                          "CDX1", "CDX2", "CDH2", "DLL3", "FOXC1", "FOXC2", "TBX6", "MSGN1"))
+```
+
+
+
+
+```{r}
+png(res = 300, filename = "data/figures/Stage1_StrDotPlot_earlyMarkers.png",units = "mm", width = 200, height = 85)
+StrDotPlot(s1, group.by = "SCT_snn_res.0.5", features = c("POU5F1", "EPCAM", "SOX2", "NANOG", "CDH1", "EOMES", "SOX10", "FGF8", "FGF17", "MIXL1", "T",
+                                                          "CDX1", "CDX2", "CDH2", "DLL3", "FOXC1", "FOXC2", "TBX6", "MSGN1")) +
+  theme(title = element_text(size = 0),
+        text = element_text(size = 20))
+dev.off()
+```
+```{r}
+s1.markers <- FindAllMarkers(SetIdent(s1, value = "SCT_snn_res.0.5"), only.pos = T, test.use = "t") %>% mutate(diff = pct.1-pct.2)
+```
+
+
+```{r}
+pseudobulk <- function(seu, ident) {
+  counts <- data.frame(row.names = rownames(seu@assays$RNA@counts))
+  for (i in 1:length(unique(seu@meta.data[,ident]))){
+    temp.seurat <- seu[, seu@meta.data[,ident] == unique(seu@meta.data[,ident])[i]]
+    #temp.seurat <- subset(matorg, ident = unique(matorg$DKCC)[i])
+    temp.counts <- as.data.frame(temp.seurat@assays$RNA@counts)
+    temp.bulk <- data.frame(rowSums(temp.counts))
+    colnames(temp.bulk) <- c(unique(as.character(seu@meta.data[,ident]))[i])
+    counts <- cbind(counts, temp.bulk)
+  }
+  return(counts)
+}
+```
+
+
+
+```{r}
+s1.markers %>% dplyr::group_by(cluster) %>% top_n()
+```
+
+
+
+```{r}
+p <- as.matrix(table(s1.markers$cluster, s1.markers$gene))
+pearson <- cor(t(p))
+NMF::aheatmap(pearson, border_color = "black", treeheight = c(0, 50))
+```
+
+Get the psuedobulk for clusters
+
+```{r}
+s1.pb <- get.psudobulk(s1, "SCT_snn_res.0.5")
+```
+
+```{r}
+pearson <- cor((s1.pb)[unique(s1.markers$gene),])
+NMF::aheatmap(pearson, border_color = "black", treeheight = c(0, 50))
+```
+
+
+
+```{r}
+library(edgeR)
+library(limma)
+library(org.Hs.eg.db)
+library(RColorBrewer)
+```
+
+Pseudobulk the counts, using res 0.5 clusters.
+
+```{r}
+counts.s1.c <- pseudobulk(s1, "SCT_snn_res.0.5")
+dge.s1.c <- DGEList(counts=counts.s1.c, genes=rownames(counts.s1.c), group=colnames(counts.s1.c))
+#colnames(dge) <- paste(targets$ID,targets$Group,sep=".")
+ann <- AnnotationDbi::select(org.Hs.eg.db, keys=rownames(dge.s1.c), keytype = "SYMBOL", 
+              columns=c("ENTREZID","SYMBOL","GENENAME"))
+ann <- ann[!duplicated(ann$SYMBOL),]
+dge.s1.c$genes <- ann[match(rownames(dge.s1.c),ann$SYMBOL),]
+dge.s1.c$genes$LENGTH <- counts.s1.c$Length[rownames(counts.s1.c) %in% rownames(dge.s1.c)]
+
+```
+
+
+```{r, fig.height=4, fig.width=12}
+pal = brewer.pal(9, "Set1") 
+pal = DiscretePalette(9, palette = NULL)
+
+par(mfrow=c(1,3))
+barplot(dge.s1.c$samples$lib.size, names=colnames(counts.s1.c), las=2, cex.names=0.8,
+        ylab="Library size (cpm)", col = pal[factor(colnames(counts.s1.c))],
+        cex.axis=0.5)
+
+plotMDS(dge.s1.c, col=pal[factor(colnames(counts.s1.c))], gene.selection = "common",
+        labels=colnames(counts.s1.c), dim.plot = c(1,2))
+#legend("bottomright", legend=levels(factor(colnames(counts.s1.c))), text.col=pal)
+
+plotMDS(dge.s1.c, col=pal[factor(colnames(counts.s1.c))], gene.selection = "common",
+        labels=colnames(counts.s1.c), dim.plot = c(2,3))
+#legend("bottomright", legend=levels(factor(colnames(counts.s1.c))), text.col=pal)
+
+```
+
+```{r}
+ref.dge <- read_rds(here::here("data/AllRef_dge.rds"))
+share.genes <- intersect(rownames(ref.dge$counts), rownames(s1))
+
+colnames(counts.s1.c) <- paste0("Stage1_", colnames(counts.s1.c))
+counts.ref.s1 <- bind_cols(ref.dge$counts[share.genes,], counts.s1.c[share.genes,])
+
+group=c(rep("Minn", 6), 
+        rep("Tyser", 8), 
+        rep("DC",5), 
+        rep("TanE9", 8),
+        rep("Stage1", 9))
+
+corrected_data = sva::ComBat_seq(counts = as.matrix(counts.ref.s1), batch = group)
+
+
+dge.ref.s1 <- DGEList(counts=corrected_data, genes=rownames(corrected_data), group=group)
+
+ann <- AnnotationDbi::select(org.Hs.eg.db, keys=rownames(dge.ref.s1), keytype = "SYMBOL", 
+              columns=c("ENTREZID","SYMBOL","GENENAME"))
+ann <- ann[!duplicated(ann$SYMBOL),]
+dge.ref.s1$genes <- ann[match(rownames(dge.ref.s1),ann$SYMBOL),]
+
+```
+
+```{r, fig.width=12, fig.height=12}
+pal = c(rep("green", 6), 
+        rep("red", 8), 
+        rep("blue", 5), 
+        rep("purple", 8),
+        rep("black", 9))  
+
+par(mfrow=c(1,1))
+barplot(dge.ref.s1$samples$lib.size, names=colnames(counts.ref.s1), las=2, cex.names=0.8,
+        ylab="Library size (cpm)", col = pal,
+        cex.axis=0.5)
+
+plotMDS(dge.ref.s1, col=pal, gene.selection = "common",
+        labels=colnames(counts.ref.s1), dim.plot = c(1,2))
+
+plotMDS(dge.ref.s1, col=pal, gene.selection = "common",
+        labels=colnames(counts.ref.s1), dim.plot = c(3,2))
+#legend("bottomright", legend=levels(factor(colnames(counts))), text.col=pal)
+```
+
+
+```{r, fig.height=6, fig.width=12}
+dge.ref.s1.old <- dge.ref.s1
+colnames(dge.ref.s1$counts) <- gsub("Stage_", "", colnames(dge.ref.s1$counts))
+colnames(dge.ref.s1$counts) <- gsub("TanE9_", "", colnames(dge.ref.s1$counts))
+colnames(dge.ref.s1$counts) <- gsub("Minn_", "", colnames(dge.ref.s1$counts))
+colnames(dge.ref.s1$counts) <- gsub("DC_", "", colnames(dge.ref.s1$counts))
+colnames(dge.ref.s1$counts) <- gsub("Tyser_", "", colnames(dge.ref.s1$counts))
+
+plotMDS(dge.ref.s1[, c(1,2,3,6,9,11,12,13,15,17,18,19,20,22,23,28:36)], col=pal[c(1,2,3,6,9,11,12,13,15,17,18,19,20,22,23,28:36)], gene.selection = "common",
+        labels=colnames(dge.ref.s1$counts)[c(1,2,3,6,9,11,12,13,15,17,18,19,20,22,23,28:36)], dim.plot = c(1,2))
+legend("bottomright", legend=levels((dge.ref.s1$samples$group)), text.col=c(("blue"), 
+        ("green"), 
+        ("black"), 
+        ("purple"),
+        ("red")) )
+
+```
+
+```{r}
+png(res = 300, filename = "data/figures/Stage1_refs_MDS.png",units = "mm", width = 300, height = 150)
+plotMDS(dge.ref.s1[, c(1,2,3,6,9,11,12,13,15,17,18,19,20,22,23,28:36)], col=pal[c(1,2,3,6,9,11,12,13,15,17,18,19,20,22,23,28:36)], gene.selection = "common",
+        labels=colnames(dge.ref.s1$counts)[c(1,2,3,6,9,11,12,13,15,17,18,19,20,22,23,28:36)], dim.plot = c(1,2))
+legend("bottomright", legend=levels((dge.ref.s1$samples$group)), text.col=c(("blue"), 
+        ("green"), 
+        ("black"), 
+        ("purple"),
+        ("red")) )
+dev.off()
+```
+
+
+
+Compare DEGs in data to those within relevant populations of Tyser, DC, Minn and TanE9.
+
+```{r, fig.width=9, fig.height=9}
+genes <- s1.markers$gene[s1.markers$gene %in% rownames(dge.s1.c$counts)]
+pearson <- cor(dge.s1.c$counts[genes,])
+NMF::aheatmap(pearson, border_color = "black", treeheight = c(0, 50))
+
+genes <- s1.markers$gene[s1.markers$gene %in% rownames(dge.ref.s1$counts)]
+pearson <- cor(dge.ref.s1$counts[genes,])
+NMF::aheatmap(pearson, border_color = "black", treeheight = c(0, 50),
+              annCol = data.frame(ref = factor(dge.ref.s1$samples$group)))
+```
+
+Can see the psc/epiblast cells group together in the bottom right with Stage1_8.
+Stage1_2 and 3 cluster closest with the TanE9_PSM and PSM_PM and DC_d2 MPC but also with with Minn and Tyser Endoderms.
+Stage1_6 groups with ectoderm and cardiac mesoderm, so more off-target cell types.
+Stage1_0 and 4 are closest to various mesoderms from TanE9, Tyser and Minn.
+
+Compare DEGs in data to those within relevant populations of Tyser, DC, Minn and TanE9.
+
+```{r, fig.width=12, fig.height=12}
+genes <- s1.markers$gene[s1.markers$gene %in% rownames(ref.dge$counts)]
+pearson <- cor(dge.ref.s1$counts[genes,c(1,2,6,9,11,12,13,15,17,18,19,20,22,23,28:36)])
+NMF::aheatmap(pearson, border_color = "black", treeheight = c(0, 50),
+              annCol = data.frame(ref = factor(dge.ref.s1$samples$group[c(1,2,6,9,11,12,13,15,17,18,19,20,22,23,28:36)])))
+```
+
+
+
+
+```{r}
+png(res = 300, filename = "data/figures/Stage1_res05_DEG_heatmap.png",units = "mm", width = 100, height = 75)
+
+genes <- s1.markers$gene[s1.markers$gene %in% rownames(dge.s1.c$counts)]
+pearson <- cor(dge.s1.c$counts[genes,])
+NMF::aheatmap(pearson, border_color = "black", treeheight = c(0, 50))
+
+png(res = 300, filename = "data/figures/Stage1_res05_ref_heatmap.png",units = "mm", width = 300, height = 225)
+genes <- s1.markers$gene[s1.markers$gene %in% rownames(ref.dge$counts)]
+pearson <- cor(dge.ref.s1$counts[genes,c(1,2,6,9,11,12,13,15,17,18,19,20,22,23,28:36)])
+NMF::aheatmap(pearson, border_color = "black", treeheight = c(0, 50),
+              annCol = data.frame(ref = factor(dge.ref.s1$samples$group[c(1,2,6,9,11,12,13,15,17,18,19,20,22,23,28:36)])))
+dev.off()
+```
+
+Annotation of cells
+
+```{r}
+ann <- s1@meta.data %>% mutate(SCT_snn_res.0.5 = as.character(SCT_snn_res.0.5)) %>%
+  mutate(ann = case_when(SCT_snn_res.0.5 == "0" ~ "Nascent_Mesoderm_D4",
+                         SCT_snn_res.0.5 == "1" ~ "Nascent_Mesoderm_D5",
+                         SCT_snn_res.0.5 == "2" ~ "Primitive_Streak",
+                         SCT_snn_res.0.5 == "3" ~ "Primitive_Streak",
+                         SCT_snn_res.0.5 == "4" ~ "Nascent_Mesoderm_D5",
+                         SCT_snn_res.0.5 == "5" ~ "Nascent_Mesoderm_D4",
+                         SCT_snn_res.0.5 == "6" ~ "Primitive_Streak",
+                         SCT_snn_res.0.5 == "7" ~ "Epiblast_like",
+                         SCT_snn_res.0.5 == "8" ~ "Epiblast_like",
+                         TRUE ~ SCT_snn_res.0.5)) %>% rownames_to_column() %>% 
+  dplyr::select(c("rowname", "ann")) %>% mutate(stage = "Stage_1")
+s1$ann <- ann$ann
+
+```
+
+
+```{r}
+DimPlot(s1, group.by = "ann", reduction = "umap", pt.size=1.5)
+```
+
+```{r}
+png(res = 300, filename = "data/figures/Stage1_UMAP_ann.png",units = "mm", width = 275, height = 150)
+DimPlot(s1, group.by = "ann", reduction = "umap", label = T, label.size = 8, pt.size = 1.5) & NoAxes() +
+  theme(title = element_text(size = 0),
+        legend.text = element_text(size = 20))
+dev.off()
+```
+
+
