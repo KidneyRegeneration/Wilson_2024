@@ -261,3 +261,23 @@ DimPlot(s2, group.by = "ann", label=T, repel=T, label.size = 6) +
 dev.off()
 ```
 
+
+```{r, fig.width=12}
+map(c("FGF8", "ITGA8", "PAX8", "PAX2", "HOXD11", "PAX3", "SOX2", "TAGLN", "TCF15"), ~FeaturePlot(s2, features = .x, cols = c("lightgrey", "black"), order=T))
+(FeaturePlot(s2, features = c("PAX3", "SOX2"), blend = T, order=T, pt.size = 2) & NoAxes()) /
+(FeaturePlot(s2, features = c("TCF15", "PAX8"), blend = T, order=T, pt.size = 2) & NoAxes())
+```
+
+
+```{r}
+png(res = 600, filename = "data/figures/Stage2_blendedUMAP_IM_PM_NMP_wAxes.png",units = "mm", width = 400, height = 200)
+(FeaturePlot(s2, features = c("PAX3", "SOX2"), blend = T, order=T, pt.size = 1) ) /
+(FeaturePlot(s2, features = c("TCF15", "PAX8"), blend = T, order=T, pt.size = 1) )
+dev.off()
+
+png(res = 600, filename = "data/figures/Stage2_blendedUMAP_IM_PM_NMP.png",units = "mm", width = 400, height = 200)
+(FeaturePlot(s2, features = c("PAX3", "SOX2"), blend = T, order=T, pt.size = 1) & NoAxes()) /
+(FeaturePlot(s2, features = c("TCF15", "PAX8"), blend = T, order=T, pt.size = 1) & NoAxes())
+dev.off()
+```
+
