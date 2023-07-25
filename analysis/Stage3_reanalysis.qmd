@@ -332,9 +332,24 @@ s3$ann <- ordered.values$ann
 
 
 ```{r}
-DimPlot(s3, group.by = "ann", reduction = "umap", pt.size=0.2, label=T, repel = T,
-        cols = )
+
+new.col <- c(myColours()[c("NPC", "Nephron", "Stroma")], ggplotColors(5))
+names(new.col) <- c("NPC", "Nephron", "Stroma", "Dermomyotome-like", "Metanephric", "Uncommitted_IM", "NMP-like", "CellCycle-related")
+
+DimPlot(s3, group.by = "ann", reduction = "umap", pt.size=0.2, cols = new.col)
 ```
+
+```{r}
+png(res = 600, filename = "data/figures/Stage3_ann_UMAP.png",units = "mm", width = 250, height = 150) 
+DimPlot(s3, group.by = "ann", reduction = "umap", pt.size=0.2, 
+        cols = new.col) + NoAxes() & theme(text = element_text(size = 20))
+dev.off()
+```
+
+
+
+
+
 
 
 
