@@ -19,94 +19,96 @@ seurats <- read_rds("data/rds/seurat_list.rds")
 
 all <- merge(seurats[[1]], seurats[2:13])
 
-write_rds(all, "data/rds/FS19.rds")
+# load meta data
 
-all <- read_rds("data/rds/FS19.rds")
+stage.md <- read_rds("data/Stages_metadata.rds")
 
-# set up metadata
+# the data was originally merged as batches and then integrated by batch
 
-all.md <- map(seurats, ~.x@meta.data)
-all.md <- map(1:13, ~all.md[[.x]] %>% mutate(capture = paste0("CPT", .x)))
-all.md <- map_dfr(all.md, ~.x)
-rownames(all.md) <- colnames(all)
-all@meta.data <- all.md
+batch <- list(batch1 = merge(seurats[[1]], seurats[2:7]),
+              batch2 = merge(seurats[[8]], seurats[9:13]))
 
-# stage 1
-s1 <- all[, all$capture == "CPT1"]
+batch$batch1$batch <- "Batch_1"
+batch$batch2$batch <- "Batch_2"
 
-# load meta data and add to seurat
-s1.md <- read_csv("data/tables/Stage1_Annotation.csv")
-colnames(s1)[1]
-s1.md$rowname[1]
-s1.md$rowname <- gsub("_1_1", replacement = "-1_1", s1.md$rowname)
-s1 <- s1[, colnames(s1)%in%s1.md$rowname]
-s1@meta.data <- bind_cols(s1@meta.data, s1.md)
-write_rds(s1, file = "data/rds/Stage1.rds")
+library(simspec)
 
+options(future.globals.maxSize = Inf)
+future::nbrOfWorkers() -> workers
+print(paste(workers, " workers", sep = ""))
+'%!in%' <- function(x,y) !('%in%'(x,y))
 
-# stage 2
-s2 <- all[, all$capture %in% c("CPT2", "CPT3", "CPT4")]
+fs19 <- merge(batch$batch1, batch$batch2)
 
-# load meta data and add to seurat
-s2.md <- read_csv("data/tables/Stage2_Annotation_df.csv")
-colnames(s2)[c(1, 20001, 40001)]
-s2.md$rowname[c(1, 20001, 40001)]
-s2.md$rowname <- gsub("_3", replacement = "-1_4", s2.md$rowname)
-s2.md$rowname <- gsub("_2", replacement = "-1_3", s2.md$rowname)
-s2.md$rowname <- gsub("_1", replacement = "-1_2", s2.md$rowname)
-s2 <- s2[, colnames(s2)%in%s2.md$rowname]
-s2@meta.data <- bind_cols(s2@meta.data, s2.md)
-write_rds(s2, file = "data/rds/Stage2.rds")
+# add meta data
+
+fs19$cell <- gsub("-1_", "_", colnames(fs19))
+rownames(stage.md$s2) <- paste0(rownames(stage.md$s2), "_1")
+rownames(stage.md$s2) <- gsub("_3_1", "_4_1", rownames(stage.md$s2))
+rownames(stage.md$s2) <- gsub("_2_1", "_3_1", rownames(stage.md$s2))
+rownames(stage.md$s2) <- gsub("_1_1", "_2_1", rownames(stage.md$s2))
+map(stage.md, ~(.x %>% rownames()) %in% fs19$cell %>% table())
+
+fs19 <- fs19[, fs19$cell %in% c(rownames(stage.md$s1), rownames(stage.md$s2), rownames(stage.md$s3), rownames(stage.md$s4))]
 
 
-# stage 3
-s3 <- all[, all$capture %in% c("CPT5", "CPT6", "CPT7")]
+# perform whole-data integration
+fs19 <- NormalizeData(fs19)
+fs19 <- CellCycleScoring(fs19, s.features = cc.genes.updated.2019$s.genes, g2m.features = cc.genes.updated.2019$g2m.genes)
+fs19 <- fs19 %>% SCTransform(vars.to.regress = c("S.Score", "G2M.Score"), seed.use = 250395)
+fs19@assays$SCT@var.features <- c(fs19@assays$SCT@var.features[fs19@assays$SCT@var.features %!in% cc.genes.updated.2019$s.genes],
+                                   fs19@assays$SCT@var.features[fs19@assays$SCT@var.features %!in% cc.genes.updated.2019$g2m.genes])
+fs19 <- fs19 %>% RunPCA(assay = "SCT",npcs=50, verbose=F, seed.use = 250395)
+fs19 <- fs19 %>% cluster_sim_spectrum(label_tag = "batch", verbose=F)
+fs19 <- fs19 %>% RunUMAP(reduction = "css", dims = 1:ncol(Embeddings(fs19, "css")), seed.use = 250395, n.components = 2, 
+                           n.epochs = 500, verbose = F, reduction.name = "umap", reduction.key = "UMAP")
+fs19 <- fs19 %>% RunUMAP(reduction = "css", dims = 1:ncol(Embeddings(fs19, "css")), seed.use = 250395, n.components = 3, 
+                           n.epochs = 500, verbose = F, reduction.name = "umap3d", reduction.key = "UMAP3D")
 
-# load meta data and add to seurat
+write_rds(fs19, "data/rds/FS19.rds")
 
-s3.md <- read_csv("data/tables/Stage3_Assigned_Annotation.csv")
 
-colnames(s3)[c(1, 20001, 40001)]
-s3.md$rowname %>% tail()
 
-s3.md$rowname <- gsub("_5_1", replacement = "-1_5", s3.md$rowname)
-s3.md$rowname <- gsub("_6_1", replacement = "-1_6", s3.md$rowname)
-s3.md$rowname <- gsub("_7_1", replacement = "-1_7", s3.md$rowname)
+stages <- list(s1 = fs19[, fs19$cell %in% rownames(stage.md$s1)],
+               s2 = fs19[, fs19$cell %in% rownames(stage.md$s2)],
+               s3 = fs19[, fs19$cell %in% rownames(stage.md$s3)],
+               s4 = fs19[, fs19$cell %in% rownames(stage.md$s4)])
 
-s3.md <- left_join(s3@meta.data %>% rownames_to_column(), s3.md, by = "rowname") %>% filter(!is.na(stage))
-s3 <- s3[, colnames(s3)%in%s3.md$rowname]
-s3@meta.data <- s3.md %>% column_to_rownames()
-write_rds(s3, file = "data/rds/Stage3.rds")
+md <- map(1:4, ~left_join((stages[[.x]]@meta.data), (stage.md[[.x]] %>% mutate(cell = rownames(stage.md[[.x]]))), by = "cell"))
 
-# stage 4
-s4 <- all[, all$capture %in% paste0("CPT", 8:13)]
+stages$s1@meta.data <- md[[1]] %>% column_to_rownames("cell")
+stages$s2@meta.data <- md[[2]] %>% column_to_rownames("cell")
+stages$s3@meta.data <- md[[3]] %>% column_to_rownames("cell")
+stages$s4@meta.data <- md[[4]] %>% column_to_rownames("cell")
 
-# load meta data and add to seurat
 
-s4.md <- read_csv("data/tables/Stage4_Assigned_Annotation.csv")
+# clean up the metadata
 
-colnames(s4)[seq(1, 120000, 20000)]
-s4.md$rowname[seq(1, nrow(s4.md), nrow(s4.md)/6)]
 
-s4.md$rowname <- gsub("_6_2", replacement = "-1_13", s4.md$rowname)
-s4.md$rowname <- gsub("_5_2", replacement = "-1_12", s4.md$rowname)
-s4.md$rowname <- gsub("_4_2", replacement = "-1_11", s4.md$rowname)
-s4.md$rowname <- gsub("_3_2", replacement = "-1_10", s4.md$rowname)
-s4.md$rowname <- gsub("_2_2", replacement = "-1_9", s4.md$rowname)
-s4.md$rowname <- gsub("_1_2", replacement = "-1_8", s4.md$rowname)
+stage.md$s4.fix <- (fs19[, fs19$Stage=="Stage_4"]@meta.data %>% rownames_to_column()) %>% left_join((stage.md$s4) %>% rownames_to_column(), by = "rowname") %>% column_to_rownames()
+stage.md$s4.fix <- stage.md$s4.fix[,1:31]
+colnames(stage.md$s4.fix) <- gsub(".x", "", colnames(stage.md$s4.fix))
+colkeep <- (intersect(colnames(stage.md$s1), colnames(stage.md$s4.fix)) %>% intersect(colnames(stage.md$s2)) %>% intersect(colnames(stage.md$s3)))
 
-s4.md <- left_join(s4@meta.data %>% rownames_to_column(), s4.md, by = "rowname") %>% filter(!is.na(stage))
-s4 <- s4[, colnames(s4)%in%s4.md$rowname]
-s4@meta.data <- s4.md %>% column_to_rownames()
-write_rds(s4, file = "data/rds/Stage4.rds")
+stage.md <- map(stage.md, ~.x %>% select(colkeep))
 
-# combine as stages
-s3$ann.broad <- s3$ann.long
-s4$ann.broad <- s4$ann.long
-s2$stage <- "Stage_2"
+stage.md.all <- bind_rows(stage.md[[1]], stage.md[[2]]) %>% bind_rows(stage.md[[3]]) %>% bind_rows(stage.md[[5]])
 
-all <- merge(s1, list(s2, s3, s4))
+rownames(stage.md.all) <- gsub("A_", "A-1_", rownames(stage.md.all))
+rownames(stage.md.all) <- gsub("T_", "T-1_", rownames(stage.md.all))
+rownames(stage.md.all) <- gsub("C_", "C-1_", rownames(stage.md.all))
+rownames(stage.md.all) <- gsub("G_", "G-1_", rownames(stage.md.all))
 
-write_rds(all, "data/rds/FS19.rds")
+fs19@meta.data <- stage.md.all
+
+write_rds(fs19, "data/rds/FS19.rds")
+
+#map(1:4, ~fs19[, fs19$Stage == paste0("Stage_", .x)] %>% write_rds(paste0("data/rds/Stage", .x, ".rds")))
+# load the DR from other file.
+
+
+s1 <- read_rds("data/rds/Stage1.rds")
+StrDotPlot(s1, group.by = "Ann", features = c("ZFP42", "SOX2", "NANOG", "IFITM3", "PRDM14", "SYCP3", "DAZL", "PRDM1", "STRA8", "NANOS3", "TCL1A", "TFAP2C", "PDPN"))
+
 
 

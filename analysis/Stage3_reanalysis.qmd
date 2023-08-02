@@ -346,6 +346,18 @@ DimPlot(s3, group.by = "ann", reduction = "umap", pt.size=0.2,
 dev.off()
 ```
 
+```{r}
+png(res = 600, filename = "data/figures/Stage3_ann_onoff_UMAP.png",units = "mm", width = 150, height = 150) 
+
+(DimPlot(s3[, s3$ann %in% c("NPC", "Stroma","Nephron")], group.by = "ann", reduction = "umap", pt.size=0.2, cols = new.col) + 
+    NoAxes() & theme(text = element_text(size = 20), title = element_text(size = 0))) +
+(DimPlot(s3[, s3$ann %!in% c("NPC", "Stroma","Nephron")], group.by = "ann", reduction = "umap", pt.size=0.2, cols = new.col) + 
+    NoAxes() & theme(text = element_text(size = 20), title = element_text(size = 0))) +
+  plot_layout(design = "
+              A
+              B")
+dev.off()
+```
 
 
 

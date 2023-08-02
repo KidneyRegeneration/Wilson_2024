@@ -1,0 +1,1142 @@
+---
+title: "Stage 4 reclassification June 2023"
+date: "`r Sys.Date()`"
+author: "Sean Wilson"
+output:
+  rmdformats::readthedown:
+  highlight: kate
+  toc: true
+#output:
+#  prettydoc::html_pretty:
+#    theme: cayman
+#    highlight: github
+#    toc: true
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_dir = here::here("docs/"))})
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(rmdformats)
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+source(here::here("code/general_r_functions.R"))
+source(here::here("code/project_functions.R"))
+source(here::here("code/circle_plot.R"))
+source(here::here("code/datavis.R"))
+library(plotly)
+seed <- 250395
+## Global options
+options(max.print="1000")
+opts_chunk$set(echo=FALSE,
+	             cache=FALSE,
+               cache.lazy = FALSE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE,
+               fig.width = 9,
+               fig.height = 6,
+               dpi = 600,
+               echo=FALSE)
+opts_knit$set(width=500, root.dir = here::here())
+options(future.globals.maxSize = Inf)
+
+```
+
+## Goal
+
+Melissa and I have reevaluated the data in stage 4 and this document will update the data and generate figures for the manuscripts.
+
+
+## Load stage 4 data
+
+```{r}
+s4 <- read_rds("data/rds/Stage4.rds") 
+```
+
+## SCTransform and Dim reduction
+
+```{r}
+s4 <- NormalizeData(s4) %>% 
+  ScaleData() %>% 
+  CellCycleScoring(s.features = cc.genes.updated.2019$s.genes, g2m.features = cc.genes.updated.2019$g2m.genes)
+
+s4 <- SCTransform(s4, vars.to.regress = c("S.Score", "G2M.Score"), seed.use = 250395)
+
+s4 <- RunPCA(s4, npcs = 50, seed.use = 250395)
+s4 <- RunUMAP(s4, dims = 1:50, seed.use = 250395)
+```
+
+
+Umap plots
+
+```{r, fig.width=16}
+DimPlot(s4, group.by = "gf", split.by = "chir", ncol = 3)
+```
+
+```{r}
+write_rds(s4, "data/rds/Stage4.rds")
+```
+
+
+
+
+Split for faster analysis
+
+```{r}
+s4.sub <- subset_seu(s4, x = 0.2)
+```
+
+```{r, fig.width=16}
+DimPlot(s4.sub, group.by = "gf", split.by = "chir", ncol = 3)
+```
+
+## Run DKCC
+
+```{r}
+s4.sub.dkcc <- DKCC(s4.sub)@meta.data
+```
+
+
+split by classification
+
+```{r}
+table(s4.sub.dkcc$DKCC, s4.sub.dkcc$condition)
+table(s4.sub.dkcc$LineageID, s4.sub.dkcc$condition)
+```
+
+```{r}
+s4.sub$DKCC <- s4.sub.dkcc$DKCC
+s4.sub$LineageID <- s4.sub.dkcc$LineageID
+```
+
+
+```{r, fig.width=16}
+DimPlot(s4.sub[, s4.sub$LineageID!="unassigned"], group.by = "LineageID", split.by = "chir", ncol = 3)
+DimPlot(s4.sub[, s4.sub$LineageID=="unassigned"], group.by = "LineageID", split.by = "chir", ncol = 3)
+```
+
+Some unassigned cells are clustering with nephrons and npcs
+
+```{r, fig.width=16}
+DimPlot(s4.sub, group.by = "gf", split.by = "LineageID", ncol = 4)
+```
+
+Further, some nephrons and NPCs are clustering far away from the nephron/NPC populations
+
+Are these false positives and negatives? 
+
+## False positives/negatives?
+
+If we look at running a clustering into the larger groups and reanalysis using both DevKidCC and gene expression we may be able to work it out.
+
+First, rerun DevKidCC on the unassigned cells with a lower threshold and a round of harmonisation
+
+```{r}
+s4.sub.un <- DKCC(s4.sub[, s4.sub$LineageID=="unassigned"], threshold = 0.5, max.iter = 2)@meta.data
+```
+
+```{r}
+table(s4.sub.un$DKCC)
+```
+Where to these map?
+
+```{r}
+s4.sub.un.seu <- s4.sub[, s4.sub$LineageID=="unassigned"]
+s4.sub.un.seu$redoLinID <- s4.sub.un$LineageID
+```
+
+```{r, fig.width=16}
+DimPlot(s4.sub.un.seu, group.by = "gf", split.by = "redoLinID", ncol = 4)
+```
+
+Judging by the location of Nephron and NPC cells, the reclassification with lower threshold and a round of harmonisation leads to more nephron calls indicating fewer false negatives, however also more false positives.
+
+## Cluster large groups and reanalyse
+
+We can cluster the whole dataset and look at proportion of classification in each
+
+```{r}
+s4.sub <- FindNeighbors(s4.sub)
+s4.sub <- FindClusters(s4.sub, resolution = c(0.1, 0.3, 0.6, 0.9))
+```
+
+```{r, fig.width=16, fig.height=12}
+MultiDimPlot(s4.sub, cluster.sequence = c("0.1", "0.3", "0.6", "0.9"))
+```
+
+All look very fair breakdowns, but if we stick to 0.1 as the lowest resolution and with larger but still distinct clusters we can look at proportion breakdowns
+
+```{r}
+ComponentBar(s4.sub, "SCT_snn_res.0.1", "LineageID") + coord_flip()
+ComponentBar(s4.sub, "SCT_snn_res.0.1", "LineageID", show.pct = T) + coord_flip()
+ComponentBar(s4.sub, "SCT_snn_res.0.1", "gf", show.pct = T) + coord_flip()
+```
+
+all clusters have unassigned cells, including the nephrons. 
+
+Looking at the outcome, you would think that clusters 2 and 3 have nephron and npc false negatives, 0 potentially has stroma false negatives, 7 has NPC-like false negs, clusters 4, 5 and 6 are largely unassigned so there is either false positives for the other identities or they are mixed clusters that can be further resolved.
+
+Does it change at a higher resolution?
+
+```{r}
+ComponentBar(s4.sub, "SCT_snn_res.0.6", "LineageID") + coord_flip()
+ComponentBar(s4.sub, "SCT_snn_res.0.6", "LineageID", show.pct = T) + coord_flip()
+ComponentBar(s4.sub, "SCT_snn_res.0.6", "gf", show.pct = T) + coord_flip()
+
+```
+
+A little bit. Now we can see the nephron clusters have false negatives or are not resolves between NPC/Nephron and UREP/Nephron. The stroma clusters have a similar situation. There are some clusters that are either a split between unassigned and NPC-like or a mix of many classified and unclassified cells. These are potentially false positives or a blend of cells that became stuck on their way to an identity.
+
+```{r, fig.width=16}
+DimPlot(s4.sub, split.by = "SCT_snn_res.0.1", group.by = "LineageID", ncol = 4)
+```
+
+Cluster 1, 4, 5 and 6 from resolution 0.1 contain the most mixed populations.
+
+Further, in the genuine Nephron clusters (2 and 3) there are very few FL condition cells. The Nephron and NPC populations from these are in other distinct clusters but are coming up as "false postives".
+
+## DKCC on each cluster
+
+Rerun data prep and then DKCC on each group to identify if this leads to improved resolution of cell types with false positives and negatives
+
+```{r}
+redo.s4sub.clusters <- map(0:7, 
+                           ~s4.sub[, s4.sub$SCT_snn_res.0.1==.x] %>% 
+                             SCTransform(vars.to.regress = c("S.Score", "G2M.Score"), seed.use = 250395) %>% 
+                             RunPCA(npcs=50) %>% 
+                             RunUMAP(dims=1:50))
+```
+
+
+```{r}
+map(redo.s4sub.clusters, ~.x %>% DimPlot(group.by = "LineageID"))
+```
+Now rerun DKCC for each cluster and see if there is a different outcome
+
+```{r}
+redo.s4sub.clusters.dkcc <- map(redo.s4sub.clusters, ~DKCC(.x)@meta.data)
+```
+
+```{r}
+map(1:8, ~table(redo.s4sub.clusters[[.x]]$LineageID, redo.s4sub.clusters.dkcc[[.x]]$LineageID))
+```
+
+
+## DEGs within each cluster
+
+If we look at the DEGs defining each cluster this will give us further information on identity.
+First I will look at the higher resolution of 0.6
+
+```{r}
+deg.s4sub.res0.6 <- FindAllMarkers(SetIdent(s4.sub, value = "SCT_snn_res.0.6"), only.pos = T, test.use = "t", logfc.threshold = 0.25) %>% mutate(diff = pct.1-pct.2)
+```
+
+```{r}
+top10 <- deg.s4sub.res0.6 %>% dplyr::group_by(cluster) %>% top_n(10, diff)
+top10
+```
+```{r, fig.width = 16}
+StrDotPlot(s4.sub, group.by = "SCT_snn_res.0.6", features = unique(c(top10$gene)))
+```
+
+```{r}
+p <- as.matrix(table(deg.s4sub.res0.6$gene, deg.s4sub.res0.6$cluster))
+p <- cor(p)
+```
+
+```{r}
+NMF::aheatmap(p, border_color = "black", treeheight = c(0, 25))
+ComponentBar(s4.sub, "SCT_snn_res.0.6", "LineageID", show.pct = T) + coord_flip()
+```
+
+This analysis shows 4 groups (each of 3 clusters) that have very similar DEG lists. 
+3, 10 and 17 are Nephron dominant including the UrEp cells
+7, 14 and 18 are another Nephron dominant cluster
+0, 4, 12, 8, 9 and 5 are grouped as a single clade of the histogram. These are stromal dominant clusters. 
+0, 4 and 12 are the most stroma like clusters, 9 is also similar
+8 and 5 are mixed with stromma, NPC, Nephron and unassigned cells.
+
+2 and 16 are also very similar, both having a mix of unassigned and NPC-like.
+The remaining clusters had mostly unique DEGs
+
+## Subset unassigned cells and recluster
+
+If I subset the unassigned cells, with false pos and neg included, do i get the same clustering?
+
+```{r}
+s4.sub.un.seu <- s4.sub[, s4.sub$LineageID=="unassigned"]
+
+s4.sub.un.seu <- NormalizeData(s4.sub.un.seu) %>% 
+ScaleData() %>% 
+CellCycleScoring(s.features = cc.genes.updated.2019$s.genes, g2m.features = cc.genes.updated.2019$g2m.genes)
+
+s4.sub.un.seu <- SCTransform(s4.sub.un.seu, vars.to.regress = c("S.Score", "G2M.Score"), seed.use = 250395)
+
+s4.sub.un.seu <- RunPCA(s4.sub.un.seu, npcs = 50, seed.use = 250395)
+s4.sub.un.seu <- RunUMAP(s4.sub.un.seu, dims = 1:50, seed.use = 250395)
+
+# reruning the clustering will over-write the previous clustering numbers. 
+# assign 0.1 and 0.6 res to new metadata column
+
+s4.sub.un.seu$allcells.res.0.1 <- s4.sub.un.seu$SCT_snn_res.0.1
+s4.sub.un.seu$allcells.res.0.6 <- s4.sub.un.seu$SCT_snn_res.0.6
+
+s4.sub.un.seu <- FindNeighbors(s4.sub.un.seu)
+s4.sub.un.seu <- FindClusters(s4.sub.un.seu, resolution = c(0.1, 0.3, 0.6, 0.9))
+
+```
+
+```{r, fig.width=16, fig.height=12}
+MultiDimPlot(s4.sub.un.seu, cluster.sequence = c("0.1", "0.3", "0.6", "0.9"))
+```
+
+
+```{r}
+deg.s4sub.un.res0.6 <- FindAllMarkers(SetIdent(s4.sub.un.seu, value = "SCT_snn_res.0.6"), only.pos = T, test.use = "t", logfc.threshold = 0.25) %>% mutate(diff = pct.1-pct.2)
+top5 <- deg.s4sub.un.res0.6 %>% dplyr::group_by(cluster) %>% top_n(5, diff)
+top5
+```
+
+```{r, fig.width = 24}
+StrDotPlot(s4.sub.un.seu, group.by = "SCT_snn_res.0.6", features = unique(c(top5$gene)))
+```
+
+```{r}
+p <- as.matrix(table(s4.sub.un.seu$allcells.res.0.6, s4.sub.un.seu$SCT_snn_res.0.6))
+```
+
+```{r}
+NMF::aheatmap(p, border_color = "black", treeheight = c(0, 25), scale = "row")
+```
+
+The reanalysis of only unassigned cells showed that all the cells within a "nephron" cluster (7,17,3,14,10,6) were grouped together in cluster 6, which is the "false negatives" expressing nephron markers (PAX8, EPCAM, KRT19).
+
+Other populations are fairly conserved between the full data and reanalysed clusters
+
+## Summary of subset analysis
+
+1. DKCC classification leads to great (but not perfect) classification of nephron lineages but suboptimal classification of mesenchymal and off-target populations
+2. False positives and negatives do arise, but these can be identified with a simple overview of the data with a general clustering analysis
+3. Decreasing the strictness of model calling increases false positives moreso than negatives
+4. Subsetting to more similar clusters and reclassifying does not improve classification
+5. Can reclassify all "unassigned" cells via clustering and DEGs which immediately identifies the false negatives for kidney
+6. Classification via DKCC is a great first point, particularly for nephrons
+7. Reanalysis of unassigned cells will identify the off-target populations present
+
+
+## Section 2: Targeted analysis of the full dataset
+
+Repeat the core parts of the analysis with the full dataset and produce the relevant publication quality images.
+
+```{r}
+s4.dkcc <- DKCC(s4)@meta.data
+s4$DKCC <- s4.dkcc$DKCC %>% as.character()
+s4$LineageID <- s4.dkcc$LineageID %>% as.character()
+write_csv(s4.dkcc %>% rownames_to_column(), "data/tables/S4_DKCC.csv")
+```
+
+```{r, fig.width=16, fig.height=6}
+DimPlot(s4, group.by = "LineageID", split.by = "chir", cols = DevKidCC::myColours()) & theme(text = element_text(size = 30))
+```
+
+
+```{r}
+png(res = 600, filename = "data/figures/Stage4_UMAP_LinID_chir.png",units = "mm", width = 450, height = 150)
+DimPlot(s4, group.by = "LineageID", split.by = "chir", cols = DevKidCC::myColours()) & theme(text = element_text(size = 30))
+dev.off()
+```
+
+```{r, fig.height=6, fig.width=6}
+ComponentPlot(s4, identity = "chir", component = "LineageID", show.pct = T, do.label = F) & theme(text = element_text(size = 25))
+```
+
+```{r}
+png(res = 600, filename = "data/figures/Stage4_UMAP_LinID.png",units = "mm", width = 200, height = 150)
+DimPlot(s4, group.by = "LineageID", cols = DevKidCC::myColours()) + NoAxes() & theme(text = element_text(size = 20))
+png(res = 600, filename = "data/figures/Stage4_UMAP_CHIR.png",units = "mm", width = 180, height = 150)
+DimPlot(s4, group.by = "chir", cols = cc) + NoAxes() & theme(text = element_text(size = 20))
+dev.off()
+```
+
+
+```{r}
+png(res = 600, filename = "data/figures/Stage4_Bar_LinID_chir.png",units = "mm", width = 110, height = 150)
+ComponentPlot(s4, identity = "chir", component = "LineageID", show.pct = T, do.label = F) & theme(text = element_text(size = 25))
+dev.off()
+```
+
+
+```{r, fig.width=16, fig.height=6}
+DimPlot(s4[, s4$LineageID!="unassigned"], group.by = "LineageID", split.by = "chir", ncol = 3, cols = DevKidCC::myColours()) & theme(text = element_text(size = 25))
+DimPlot(s4[, s4$LineageID=="unassigned"], group.by = "LineageID", split.by = "chir", ncol = 3, cols = DevKidCC::myColours()) & theme(text = element_text(size = 25))
+```
+
+
+```{r, fig.width=16}
+png(res = 600, filename = "data/figures/Stage4_UMAP_LinID_ass_chir.png",units = "mm", width = 450, height = 150) 
+DimPlot(s4[, s4$LineageID!="unassigned"], group.by = "LineageID", split.by = "chir", ncol = 3, cols = DevKidCC::myColours()) & theme(text = element_text(size = 25))
+png(res = 600, filename = "data/figures/Stage4_UMAP_LinID_unass_chir.png",units = "mm", width = 450, height = 150)
+DimPlot(s4[, s4$LineageID=="unassigned"], group.by = "LineageID", split.by = "chir", ncol = 3, cols = DevKidCC::myColours()) & theme(text = element_text(size = 25))
+dev.off()
+```
+
+Repeat but without seperating by CHIR
+
+```{r, fig.width=16}
+png(res = 600, filename = "data/figures/Stage4_UMAP_LinID_ass.png",units = "mm", width = 150, height = 170) 
+DimPlot(s4[, s4$LineageID%!in%c("unassigned", "NPC-like")], group.by = "LineageID", cols = DevKidCC::myColours()) & theme(text = element_text(size = 25), legend.position = "bottom")
+png(res = 600, filename = "data/figures/Stage4_UMAP_LinID_unass.png",units = "mm", width = 150, height = 170)
+DimPlot(s4[, s4$LineageID=="unassigned"], group.by = "LineageID", cols = DevKidCC::myColours()) & theme(text = element_text(size = 25), legend.position = "bottom")
+png(res = 600, filename = "data/figures/Stage4_UMAP_LinID_npclike.png",units = "mm", width = 150, height = 170)
+DimPlot(s4[, s4$LineageID=="NPC-like"], group.by = "LineageID", cols = DevKidCC::myColours()) & theme(text = element_text(size = 25), legend.position = "bottom")
+dev.off()
+```
+
+Highlight each population with grey cells as background
+
+```{r}
+png(res = 300, filename = "data/figures/Stage4_UMAP_LinID_split.png",units = "mm", width = 1200, height = 200)
+map(c("NPC", "Nephron", "UrEp", "Stroma", "NPC-like", "unassigned"), ~DimPlot(s4, cells.highlight = list(rownames(s4@meta.data %>% filter(LineageID==.x))), 
+                                                                              cols.highlight = ifelse(.x!="unassigned", myColours()[.x], "black")) + ggtitle(.x) +
+  NoAxes() & theme(text = element_text(size = 25), legend.position = "none"))  %>%  wrap_plots(ncol = 6)
+dev.off()
+```
+
+```{r}
+png(res = 300, filename = "data/figures/Stage4_UMAP_chir_split.png",units = "mm", width = 600, height = 200)
+map2(c(3,4,5), cc, ~DimPlot(s4, cells.highlight = list(rownames(s4@meta.data %>% filter(chir==paste0(.x, "c")))), 
+                            cols.highlight = .y) + ggtitle(paste0(.x, "c")) +
+       NoAxes() & theme(text = element_text(size = 25), legend.position = "none"))  %>%  wrap_plots(ncol = 3)
+dev.off()
+```
+
+Rerun the clustering of all cells to broad and more restricted lineages
+
+```{r}
+s4 <- FindNeighbors(s4)
+s4 <- FindClusters(s4, resolution = c(0.1, 0.3, 0.6, 0.9))
+```
+
+```{r, fig.width=16, fig.height=12}
+MultiDimPlot(s4, cluster.sequence = c("0.1", "0.3", "0.6", "0.9"))
+```
+
+```{r}
+png(res = 600, filename = "data/figures/Stage4_UMAP_clustering.png",units = "mm", width = 400, height = 300) 
+MultiDimPlot(s4, cluster.sequence = c("0.1", "0.3", "0.6", "0.9")) & theme(text = element_text(size = 20))
+dev.off()
+```
+```{r}
+png(res = 600, filename = "data/figures/Stage4_UMAP_res01.png",units = "mm", width = 180, height = 150)
+DimPlot(s4, group.by = "SCT_snn_res.0.1", label = T, label.size = 10) + NoAxes() & theme(text = element_text(size = 20))
+dev.off()
+png(res = 600, filename = "data/figures/Stage4_UMAP_res03.png",units = "mm", width = 180, height = 150)
+DimPlot(s4, group.by = "SCT_snn_res.0.3", label = T, label.size = 10) + NoAxes() & theme(text = element_text(size = 20))
+dev.off()
+```
+
+Where are the false negs and positives located?
+
+```{r, fig.width=12, fig.height=6}
+ComponentPlot(s4, identity = "SCT_snn_res.0.1", component = "LineageID", show.pct = T, do.label = F) & theme(text = element_text(size = 20))
+ComponentPlot(s4, identity = "SCT_snn_res.0.3", component = "LineageID", show.pct = T, do.label = F) + coord_flip() & theme(text = element_text(size = 20))
+
+```
+
+```{r}
+png(res = 600, filename = "data/figures/Stage4_res01_ComponentPlot.png",units = "mm", width = 160, height = 160) 
+ComponentPlot(s4, identity = "SCT_snn_res.0.1", component = "LineageID", show.pct = T, do.label = F) & theme(text = element_text(size = 30))
+dev.off()
+
+png(res = 600, filename = "data/figures/Stage4_res03_ComponentPlot.png",units = "mm", width = 200, height = 160) 
+ComponentPlot(s4, identity = "SCT_snn_res.0.3", component = "LineageID", show.pct = T, do.label = F) + coord_flip() & theme(text = element_text(size = 30))
+dev.off()
+```
+
+
+
+You could say that nephrons and stroma in cluster 1, 4, 5, 6 and 7 are false positives, while unassigned are false negatives in 0, 2, 3 and 8. 
+The NPC-like are an ambiguous population likely arising from a combination of an in vitro artefact and the model.
+
+What happens if we force a call on all the unassigned cells?
+
+```{r, fig.width=16, fig.height=6}
+s4$max_DKCC <- s4.dkcc$scpred_no_rejection
+ComponentBar(s4[, s4$LineageID=="unassigned"], "SCT_snn_res.0.1", "max_DKCC", show.pct = T) + coord_flip()
+DimPlot(s4[, s4$LineageID=="unassigned"], group.by = "max_DKCC", split.by = "chir", ncol = 3)
+```
+
+When forcing a call, most of the cells in clusters 0, 2 and 3 are assigned to the "correct" identity. 
+
+## Classify the unassigned and NPC-like cells
+
+OF interest to us is the off-target populations.
+
+```{r}
+unass <- s4[, s4$DKCC == "unassigned"]
+```
+
+```{r}
+unass <- unass %>% SCTransform(vars.to.regress = c("S.Score", "G2M.Score"), seed.use = 250395)
+unass <- unass %>% RunPCA(npcs=50) %>% RunUMAP(dims=1:50)
+```
+
+```{r}
+DimPlot(unass, group.by = "SCT_snn_res.0.1")
+```
+
+Recompute the clusters and find DEGS
+
+```{r}
+unass <- FindNeighbors(unass)
+unass <- FindClusters(unass, resolution = c(0.1, 0.3, 0.6, 0.9))
+```
+
+```{r}
+DimPlot(unass, group.by = "SCT_snn_res.0.1")
+```
+
+```{r}
+markers.un <- FindAllMarkers(SetIdent(unass, value = "SCT_snn_res.0.1"), only.pos = T, test.use = "t")
+```
+
+```{r, fig.width=16}
+StrDotPlot(unass, group.by = "SCT_snn_res.0.1", unique((markers.un %>% dplyr::group_by(cluster) %>% top_n(10, pct.1-pct.2))$gene) )
+```
+
+
+
+## NPC-like
+
+```{r}
+npclike <- s4[, s4$DKCC == "NPC-like"]
+```
+
+```{r}
+npclike <- npclike %>% SCTransform(vars.to.regress = c("S.Score", "G2M.Score"), seed.use = 250395)
+npclike <- npclike %>% RunPCA(npcs=50) %>% RunUMAP(dims=1:50)
+```
+
+```{r}
+DimPlot(npclike, group.by = "SCT_snn_res.0.1")
+```
+
+```{r}
+npclike <- FindNeighbors(npclike)
+npclike <- FindClusters(npclike, resolution = c(0.1, 0.3, 0.6, 0.9))
+```
+
+```{r, fig.width=16, fig.height=12}
+MultiDimPlot(npclike, cluster.sequence = c("0.1", "0.3", "0.6", "0.9"))
+```
+
+```{r}
+markers.npclike <- FindAllMarkers(SetIdent(npclike, value = "SCT_snn_res.0.1"), only.pos = T, test.use = "t")
+```
+
+```{r}
+markers.npclike %>% dplyr::group_by(cluster) %>% top_n(5, pct.1-pct.2)
+```
+
+```{r, fig.width = 16}
+StrDotPlot(npclike, group.by = "SCT_snn_res.0.1", unique((markers.npclike %>% dplyr::group_by(cluster) %>% top_n(10, pct.1-pct.2))$gene) )
+```
+
+
+We can compare the DEGs between the NPC-like and unassigned populatoins to work out if any clusters are related between the two.
+
+
+```{r}
+mrks.merge <- bind_rows((markers.un %>% mutate(cluster = paste0(cluster, "_UN"))), (markers.npclike %>% mutate(cluster = paste0(cluster, "_NPCLIKE"))))
+p1 <- as.matrix(table(mrks.merge$cluster, mrks.merge$gene))
+p <- cor(t(p1))
+NMF::aheatmap(p, border_color = "black", treeheight = c(0, 25), scale = "row")
+```
+
+```{r, fig.width = 16}
+StrDotPlot(unass, group.by = "SCT_snn_res.0.1", unique((markers.npclike %>% dplyr::group_by(cluster) %>% top_n(10, pct.1-pct.2))$gene) )
+StrDotPlot(npclike, group.by = "SCT_snn_res.0.1", unique((markers.un %>% dplyr::group_by(cluster) %>% top_n(10, pct.1-pct.2))$gene) )
+
+```
+
+There is a correlation between some clusters of the two different sets (unassigned and NPC-like).
+
+What makes the NPC-like different than the unassigned?
+
+We can look at two things. 1st, what is the score for NPC between NPC-like and Unassigned clusters that share majority DEGs?
+
+```{r}
+unass$scpred_NPC <- s4.dkcc[s4$LineageID=="unassigned",]$scpred_NPC
+npclike$scpred_NPC <- s4.dkcc[s4$LineageID=="NPC-like",]$scpred_NPC
+```
+
+```{r}
+VlnPlot(unass, features = "scpred_NPC", group.by = "SCT_snn_res.0.1")
+VlnPlot(npclike, features = "scpred_NPC", group.by = "SCT_snn_res.0.1")
+```
+
+NPC-like clusters 3, 4 and 5 have the most even distrubution of scores for NPC and are also the populations closest to an unassigned population. Clusters 0, 1 and 2 have a more positive skew towards a score of 1, with only cluster 2 having a strong similarity to an unassigned cluster.
+What does this mean? hard to pinpoint, but the NPC-like cells in clusters most similar to unassigned cells have the lowest mean NPC positive prediction score. The clusters in the unassigned cells they are most similar to, 2, 5 and 6 also have a broad distribution of NPC scores while the other clusters have a large skew towards a 0 score.
+
+Next, we can investigate what the DEGs are that are shared and unique in these pairs.
+
+The pairs are:
+
+2_UN and 4_NPCLIKE
+6_UN and 2_NPCLIKE
+5_UN and 3_NPCLIKE
+0_UN and 5_NPCLIKE
+3_UN and 1_NPCLIKE
+
+```{r}
+degsharing <- map2(c(2,6,5,0,3), c(4,2,3,5,1),
+                   ~bind_rows(markers.un %>% filter(cluster == .x) %>% mutate(type = "UN"),
+                              markers.npclike %>% filter(cluster==.y) %>% mutate(type = "NPCLIKE")))
+```
+
+```{r}
+degsharing.int <- map2(c(2,6,5,0,3), c(4,2,3,5,1),
+                   ~intersect((markers.un %>% filter(cluster == .x) %>% mutate(type = "UN"))$gene,
+                              (markers.npclike %>% filter(cluster==.y) %>% mutate(type = "NPCLIKE"))$gene))
+degsharing.unonly <- map(degsharing, 
+                         ~(.x %>% filter(type == "UN"))$gene[(.x %>% filter(type == "UN"))$gene %!in% (.x %>% filter(type == "NPCLIKE"))$gene])
+degsharing.npclikeonly <- map(degsharing, 
+                         ~(.x %>% filter(type == "NPCLIKE"))$gene[(.x %>% filter(type == "NPCLIKE"))$gene %!in% (.x %>% filter(type == "UN"))$gene])
+```
+
+```{r}
+map(degsharing.int, ~length(.x))
+map(degsharing.unonly, ~length(.x))
+map(degsharing.npclikeonly, ~length(.x))
+```
+
+Unsure exactly how to decide on an analysis outcome from this.
+
+For now, can say that there are some similar unassigned and NPC-like clusters, while some are unique. The only 'unique' NPC-like cluster is cluster 0, which is in the middle of the UMAP connected to most aother clusters and its top 10 DEGS are expressed in a number of the unassigned clusters.
+
+
+NPC-like cells are an in vitro artifact, cells that have diverged from a truly nephron lineage after having taken on some of the transcriptional profile of that lineage. There is no unique marker for these cells, however they do align with truly non-kidney like "unassigned" cells. in these clusters we can identify markers that show their identity. We can use these to identify what cell types these 'off-target' populations have become are are most similar to.
+
+
+## Off target population analysis
+
+The initial analysis of off target populations included a reanalysis and reclustering of all "unassigned" cells but not the NPC-like. These cells were then evaluated for their DEG signatures at a decided clustering resolution. Finally, a subset of these cells were mapped onto the human development atlas using Azimuth online. 
+
+The previous analysis highlighted that many of the NPC-like cells were similar to some unassigned populations, based on their location and clustering on the UMAP of all cells AND the DEGs in more resolved clusters.
+
+While the cell populations that are identified are unlikely to change, I will reperform this analysis but including the NPC-like cells included, for all the 'off-target' populations as we have identified that they are. 
+
+
+
+
+
+Look at the DEGs in the 
+
+
+
+
+```{r}
+s4.off.seu <- s4[, s4$LineageID%in% c("unassigned", "NPC-like")]
+
+s4.off.seu <- NormalizeData(s4.off.seu) %>% 
+ScaleData() %>% 
+CellCycleScoring(s.features = cc.genes.updated.2019$s.genes, g2m.features = cc.genes.updated.2019$g2m.genes)
+
+s4.off.seu <- SCTransform(s4.off.seu, vars.to.regress = c("S.Score", "G2M.Score"), seed.use = 250395)
+
+s4.off.seu <- RunPCA(s4.off.seu, npcs = 50, seed.use = 250395)
+s4.off.seu <- RunUMAP(s4.off.seu, dims = 1:50, seed.use = 250395)
+
+# reruning the clustering will over-write the previous clustering numbers. 
+# assign 0.1 and 0.6 res to new metadata column
+
+s4.off.seu$allcells.res.0.1 <- s4.off.seu$SCT_snn_res.0.1
+s4.off.seu$allcells.res.0.3 <- s4.off.seu$SCT_snn_res.0.3
+s4.off.seu$allcells.res.0.6 <- s4.off.seu$SCT_snn_res.0.6
+
+```
+
+
+
+
+
+
+
+```{r, fig.width=16, fig.height=12}
+s4.off.seu <- FindNeighbors(s4.off.seu)
+s4.off.seu <- FindClusters(s4.off.seu, resolution = c(0.1, 0.3, 0.6, 0.9))
+MultiDimPlot(s4.off.seu, cluster.sequence = c("0.1", "0.3", "0.6", "0.9"))
+```
+
+```{r}
+DimPlot(s4.off.seu, group.by = "LineageID")
+DimPlot(s4.off.seu, group.by = "allcells.res.0.3")
+```
+
+Unsurprisingly, there is a good amount of overlap yet still a unique NPC-like grouping.
+
+```{r}
+png(res = 600, filename = "data/figures/Stage4_offtarget_UMAP.png",units = "mm", width = 200, height = 150) 
+DimPlot(s4.off.seu, group.by = "LineageID") + NoAxes() & theme(text = element_text(size = 20))
+png(res = 600, filename = "data/figures/Stage4_offtarget_UMAP_res09.png",units = "mm", width = 200, height = 150) 
+DimPlot(s4.off.seu, group.by = "SCT_snn_res.0.9", label=T, label.size = 10) + NoAxes() & theme(text = element_text(size = 20))
+dev.off()
+```
+
+
+
+
+```{r}
+markers.offtarget <- FindAllMarkers(SetIdent(s4.off.seu, value = "SCT_snn_res.0.3"), only.pos = T, test.use = "t")
+```
+
+```{r}
+p2 <- as.matrix(table(markers.offtarget$cluster, markers.offtarget$gene))
+p <- cor(t(p2))
+NMF::aheatmap(p, border_color = "black", treeheight = c(0, 25), scale = "row")
+```
+
+Clusters 3 and 4 are fairly similar but the remaining clusters have many distinct DEGs.
+
+If we move to the most resolved analysis of 0.9, does this identify any more unique populations?
+
+```{r}
+markers.offtarget.9 <- FindAllMarkers(SetIdent(s4.off.seu, value = "SCT_snn_res.0.9"), only.pos = T, test.use = "t")
+write_csv(markers.offtarget.9, "data/tables/Markers_offtarget_res09.csv")
+```
+
+```{r}
+p3 <- as.matrix(table(markers.offtarget.9$cluster, markers.offtarget.9$gene))
+p <- cor(t(p3))
+NMF::aheatmap(p, border_color = "black", treeheight = c(0, 25), scale = "row")
+```
+
+```{r}
+png(res = 600, filename = "data/figures/Stage4_offtarget_DEGheatmap_res09.png",units = "mm", width = 200, height = 150) 
+NMF::aheatmap(p, border_color = "black", treeheight = c(0, 25), scale = "row")
+dev.off()
+```
+
+
+
+
+We can do a combination of DEG and projection analysis to identify populations.
+
+
+```{r, fig.width=8, fig.height=12}
+StrDotPlot(s4.off.seu, group.by = "SCT_snn_res.0.3", features = unique((markers.offtarget %>% dplyr::group_by(cluster) %>% top_n(5, pct.1-pct.2))$gene)) + coord_flip()
+```
+
+
+
+## Azimuth analysis
+
+```{r}
+ComponentHeatMapDF <- function(seurat, identity, component, scale = "none", show.pct = FALSE, tidy = T) {
+  Pct = NULL
+  Cells = NULL
+  Component = NULL
+  Identity = NULL
+  
+  df <- as.data.frame(table(as.character(seurat@meta.data[[paste0(identity)]]),
+                            as.character(seurat@meta.data[[paste0(component)]])))
+  id <- as.data.frame(table(seurat[[paste0(identity)]]))
+  colnames(id) <- c("Identity", "CellTotal")
+  colnames(df) <- c("Identity", "Component", "Cells")
+  df <- dplyr::left_join(df, id, "Identity")
+  df$Pct <- round(df$Cells / df$CellTotal * 100, digits = 2)
+  if (!tidy){
+    df <- pivot_wider(df[c("Identity", "Component", "Pct")], names_from = "Component", values_from = "Pct") %>% column_to_rownames("Identity")
+  }
+  return(df)
+}
+```
+
+```{r}
+s4.off.seu.sub <- subset_seu(s4.off.seu)
+write_rds(s4.off.seu.sub, "data/rds/S4_offtarget_subset.rds")
+s4.on.seu.sub <- subset_seu(s4[, s4$LineageID %!in% c("NPC-like", "unassigned")], x = 0.08)
+write_rds(s4.on.seu.sub, "data/rds/S4_ontarget_subset.rds")
+```
+
+
+First, run the on-target subset against both HDA and the adult kidney references on azimuth and look at similarities of classification.
+
+Comparison to HDA:
+
+```{r}
+predictions <- read.delim(here::here('data/azimuth_pred_ontarget_toHDA.tsv'), row.names = 1)
+colnames(predictions) <- paste0("HDA_", colnames(predictions))
+s4.on.seu.sub <- AddMetaData(
+	object = s4.on.seu.sub,
+	metadata = predictions)
+
+```
+
+```{r, fig.width=10, fig.height=8}
+s4.on.seu.sub$HDA_predicted.annotation.l2 <- gsub(" cells", "", s4.on.seu.sub$HDA_predicted.annotation.l2)
+#s4.on.seu.sub$offtarget.clusters <- factor(paste0(s4.on.seu.sub$SCT_snn_res.0.9), levels = paste0(0:23))
+ComponentHeatMapDF(s4.on.seu.sub, identity = "LineageID", component = "HDA_predicted.annotation.l2") %>% 
+  mutate(Identity = factor(Identity, levels = names(myColours()[unique(s4$LineageID)]))) %>% 
+  ggplot() +
+  geom_tile(aes(Identity, Component, fill = Pct), colour = "white") +
+  viridis::scale_fill_viridis() + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))
+
+ComponentHeatMapDF(s4.on.seu.sub, identity = "SCT_snn_res.0.3", component = "HDA_predicted.annotation.l2") %>% 
+  mutate(Identity = factor(Identity, levels = paste0(0:14))) %>% 
+  ggplot() +
+  geom_tile(aes(Identity, Component, fill = Pct), colour = "white") +
+  viridis::scale_fill_viridis() + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))
+  
+s4.on.seu.sub@meta.data %>% filter(!is.na(HDA_predicted.annotation.l2)) %>% 
+  ggplot() +
+  geom_jitter(aes(HDA_predicted.annotation.l2.score, HDA_predicted.annotation.l2), size = 0.1) +
+  geom_violin(aes(HDA_predicted.annotation.l2.score, HDA_predicted.annotation.l2, fill = HDA_predicted.annotation.l2, alpha=0.5)) +
+  theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1)) + NoLegend()
+
+ComponentHeatMapDF(s4.on.seu.sub[, s4.on.seu.sub$HDA_predicted.annotation.l2.score>0.5], identity = "LineageID", component = "HDA_predicted.annotation.l2") %>% 
+  mutate(Identity = factor(Identity, levels = names(myColours()[unique(s4$LineageID)]))) %>% 
+  ggplot() +
+  geom_tile(aes(Identity, Component, fill = Pct), colour = "white") +
+  viridis::scale_fill_viridis() + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))
+
+ComponentHeatMapDF(s4.on.seu.sub[, s4.on.seu.sub$HDA_predicted.annotation.l2.score>0.5], identity = "SCT_snn_res.0.3", component = "HDA_predicted.annotation.l2") %>% 
+  mutate(Identity = factor(Identity, levels = paste0(0:14))) %>% 
+  ggplot() +
+  geom_tile(aes(Identity, Component, fill = Pct), colour = "white") +
+  viridis::scale_fill_viridis() + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))
+  
+```
+
+
+```{r}
+png(res = 600, filename = "data/figures/Stage4_ontarget_HDA_jitter.png",units = "mm", width = 250, height = 200) 
+s4.on.seu.sub@meta.data %>% filter(!is.na(HDA_predicted.annotation.l2)) %>% 
+  ggplot() +
+  geom_jitter(aes(HDA_predicted.annotation.l2.score, HDA_predicted.annotation.l2), size = 0.1) +
+  geom_violin(aes(HDA_predicted.annotation.l2.score, HDA_predicted.annotation.l2, fill = HDA_predicted.annotation.l2, alpha=0.5)) +
+  theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1), text = element_text(size = 20)) + NoLegend()
+dev.off()
+```
+
+```{r}
+png(res = 600, filename = "data/figures/Stage4_ontarget_HDA_heatmap_dkcc.png",units = "mm", width = 150, height = 80)
+ComponentHeatMapDF(s4.on.seu.sub[, s4.on.seu.sub$HDA_predicted.annotation.l2.score>0.5], identity = "DKCC", component = "HDA_predicted.annotation.l2") %>% 
+  mutate(Identity = factor(Identity, levels = names(myColours()[unique(s4$DKCC)]))) %>% 
+  ggplot() +
+  geom_tile(aes(Identity, Component, fill = Pct), colour = "white") +
+  viridis::scale_fill_viridis() + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))
+
+png(res = 600, filename = "data/figures/Stage4_ontarget_heatmap_clusters.png",units = "mm", width = 150, height = 60)
+ComponentHeatMapDF(s4.on.seu.sub[, s4.on.seu.sub$HDA_predicted.annotation.l2.score>0.5], identity = "SCT_snn_res.0.3", component = "HDA_predicted.annotation.l2") %>% 
+  mutate(Identity = factor(Identity, levels = paste0(0:14))) %>% 
+  ggplot() +
+  geom_tile(aes(Identity, Component, fill = Pct), colour = "white") +
+  viridis::scale_fill_viridis() + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))
+dev.off()
+```
+
+
+
+```{r, fig.width=24}
+DimPlot(s4.on.seu.sub, group.by = "HDA_predicted.annotation.l2")
+```
+
+Comparison to adult Kidney atlas:
+
+```{r}
+predictions <- read.delim(here::here('data/azimuth_pred_ontarget_tohumankidneyatlas.tsv'), row.names = 1)
+colnames(predictions) <- paste0("HAK_", colnames(predictions))
+s4.on.seu.sub <- AddMetaData(
+	object = s4.on.seu.sub,
+	metadata = predictions)
+
+```
+
+```{r, fig.width=10, fig.height=8}
+s4.on.seu.sub$HAK_predicted.annotation.l2 <- gsub(" cells", "", s4.on.seu.sub$HAK_predicted.annotation.l2)
+#s4.on.seu.sub$offtarget.clusters <- factor(paste0(s4.on.seu.sub$SCT_snn_res.0.9), levels = paste0(0:23))
+ComponentHeatMapDF(s4.on.seu.sub, identity = "DKCC", component = "HAK_predicted.annotation.l2") %>% 
+  mutate(Identity = factor(Identity, levels = names(myColours()[unique(s4$DKCC)]))) %>% 
+  ggplot() +
+  geom_tile(aes(Identity, Component, fill = Pct), colour = "white") +
+  viridis::scale_fill_viridis() + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))
+  
+s4.on.seu.sub@meta.data %>% filter(!is.na(HAK_predicted.annotation.l2)) %>% 
+  ggplot() +
+  geom_jitter(aes(HAK_predicted.annotation.l2.score, HAK_predicted.annotation.l2), size = 0.1) +
+  geom_violin(aes(HAK_predicted.annotation.l2.score, HAK_predicted.annotation.l2, fill = HAK_predicted.annotation.l2, alpha=0.5)) +
+  theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1)) + NoLegend()
+
+ComponentHeatMapDF(s4.on.seu.sub[, s4.on.seu.sub$HAK_predicted.annotation.l2.score>0.5], identity = "DKCC", component = "HAK_predicted.annotation.l2") %>% 
+  mutate(Identity = factor(Identity, levels = names(myColours()[unique(s4$DKCC)]))) %>% 
+  ggplot() +
+  geom_tile(aes(Identity, Component, fill = Pct), colour = "white") +
+  viridis::scale_fill_viridis() + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))
+```
+
+
+```{r}
+map(0:11, ~s4.off.seu[, s4.off.seu$SCT_snn_res.0.3 == .x] %>% write_rds(paste0("data/rds/S4_offtarget_res03cluster", .x, ".rds")))
+```
+
+The first analysis i ran was a subset of all the cells, 2200 out of 22000
+
+
+
+
+```{r}
+predictions <- read.delim(here::here('data/azimuth_pred_subset.tsv'), row.names = 1)
+s4.off.seu.sub <- AddMetaData(
+	object = s4.off.seu.sub,
+	metadata = predictions)
+
+```
+
+```{r, fig.width=8, fig.height=5}
+s4.off.seu.sub$predicted.annotation.l2 <- gsub(" cells", "", s4.off.seu.sub$predicted.annotation.l2)
+#s4.off.seu.sub$offtarget.clusters <- factor(paste0(s4.off.seu.sub$SCT_snn_res.0.9), levels = paste0(0:23))
+ComponentHeatMapDF(s4.off.seu.sub, identity = "SCT_snn_res.0.3", component = "predicted.annotation.l2") %>% mutate(Identity = factor(Identity, levels = levels(s4.off.seu.sub$SCT_snn_res.0.3))) %>% 
+  ggplot() +
+  geom_tile(aes(Identity, Component, fill = Pct)) +
+  viridis::scale_fill_viridis() + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))
+  
+s4.off.seu.sub@meta.data %>% filter(!is.na(predicted.annotation.l2)) %>% 
+  ggplot() +
+  geom_jitter(aes(predicted.annotation.l2.score, predicted.annotation.l2), size = 0.1) +
+  geom_violin(aes(predicted.annotation.l2.score, predicted.annotation.l2, fill = predicted.annotation.l2, alpha=0.5)) +
+  theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1)) + NoLegend()
+
+ComponentHeatMapDF(s4.off.seu.sub[, s4.off.seu.sub$predicted.annotation.l2.score>0.5 & 
+                                    s4.off.seu.sub$SCT_snn_res.0.3 %in% c(1,2,4,8,10,11,14)], identity = "SCT_snn_res.0.3", component = "predicted.annotation.l2") %>% 
+  mutate(Identity = factor(Identity, levels = levels(s4.off.seu.sub$SCT_snn_res.0.3))) %>% 
+  ggplot() +
+  geom_tile(aes(Identity, Component, fill = Pct)) +
+  viridis::scale_fill_viridis() + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))
+
+ComponentHeatMapDF(s4.off.seu.sub[, s4.off.seu.sub$predicted.annotation.l2.score>0.5], identity = "SCT_snn_res.0.3", component = "predicted.annotation.l2") %>% 
+  mutate(Identity = factor(Identity, levels = levels(s4.off.seu.sub$SCT_snn_res.0.3))) %>% 
+  ggplot() +
+  geom_tile(aes(Identity, Component, fill = Pct)) +
+  viridis::scale_fill_viridis() + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))
+```
+
+```{r}
+png(res = 600, filename = "data/figures/Stage4_offtarget_HDA_heatmap.png",units = "mm", width = 150, height = 60) 
+ComponentHeatMapDF(s4.off.seu.sub[, s4.off.seu.sub$predicted.annotation.l2.score>0.5 & 
+                                    s4.off.seu.sub$SCT_snn_res.0.3 %in% c(1,2,4,8,10,11,14)], identity = "SCT_snn_res.0.3", component = "predicted.annotation.l2") %>% 
+  mutate(Identity = factor(Identity, levels = levels(s4.off.seu.sub$SCT_snn_res.0.3))) %>% 
+  ggplot() +
+  geom_tile(aes(Identity, Component, fill = Pct)) +
+  viridis::scale_fill_viridis() + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))
+dev.off()
+
+png(res = 600, filename = "data/figures/Stage4_offtarget_HDA_jitter.png",units = "mm", width = 150, height = 130) 
+s4.off.seu.sub@meta.data %>% filter(!is.na(predicted.annotation.l2)) %>% 
+  ggplot() +
+  geom_jitter(aes(predicted.annotation.l2.score, predicted.annotation.l2), size = 0.1) +
+  geom_violin(aes(predicted.annotation.l2.score, predicted.annotation.l2, fill = predicted.annotation.l2, alpha=0.5)) +
+  theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1)) + NoLegend()
+
+png(res = 600, filename = "data/figures/Stage4_offtarget_HDA_heatmap_filter.png",units = "mm", width = 150, height = 60) 
+ComponentHeatMapDF(s4.off.seu.sub[, s4.off.seu.sub$predicted.annotation.l2.score>0.5], identity = "SCT_snn_res.0.3", component = "predicted.annotation.l2") %>% 
+  mutate(Identity = factor(Identity, levels = levels(s4.off.seu.sub$SCT_snn_res.0.3))) %>% 
+  ggplot() +
+  geom_tile(aes(Identity, Component, fill = Pct), colour = "white") +
+  viridis::scale_fill_viridis() + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))
+dev.off()
+```
+Shown are lung epithelial cell markers: EPCAM and CDH1 ; alveolar type 1 cell markers: AGER and HOPX ; alveolar type 2 cell markers: SFTPC , SLC34A2 , and ABCA3 ; proximal lung epithelial cell markers: SOX2 , PAX9 , TP63 , KRT5 , KRT14 , MUC5B , and SCGB1A1 
+
+```{r}
+StrDotPlot(s4.off.seu, group.by = "SCT_snn_res.0.9", features = c("EPCAM", "CDH1", "AGER", "HOPX", "SFTPC", "SLC34A2", "ABCA3", "SOX2", "PAX9", "TP63", "KRT5", "KRT14", "MUC5B", "SCGB1A1"))
+```
+
+## Non-kidney cluster analysis
+
+Analyse the DEGs for clusters 1,2,4,8,10 and 11 in the s4 dataset (the most unkidneylike populations)
+
+```{r}
+markers.res03.unkidneylike <- FindAllMarkers(SetIdent(s4[, s4$SCT_snn_res.0.3 %in% c(1,2,4,8,9,10,11, 14)], value = "SCT_snn_res.0.3"), only.pos=T, test.use = "t") %>% mutate(diff = pct.1-pct.2)
+```
+
+```{r}
+map(c(1,2,4,8,9,10,11,14), ~markers.res03.unkidneylike %>% filter(cluster == .x) %>% arrange(-diff))
+```
+
+```{r, fig.width=16}
+markers.for.test <- c("GDF10", "ZIC1", "ZIC2", "SFRP2", "SOX2", 
+                      "MAFG", "MXD1", "VGF", "NEU1",
+                      "PITX2", "FGFR4", "MSC", "DCN", "MYL1", "MYOD1", "PAX7",
+                      "CLSPN", "CENPK", "CENPU", "CENPW",
+                      "PRRX1", "PRRX2", "PDGFRA", "COL3A1", 
+                      "PLP1", "SOX10", "CDH19", "PMEL", "MLANA",
+                      "ELAVL2", "ELAVL3", "ELAVL4", "DCX", "STMN2", "TAGLN3",
+                      "TNNI2", "ACTN2", "TNNT2", "MYOG")
+```
+
+
+```{r, fig.width=16}
+StrDotPlot(s4[, s4$SCT_snn_res.0.3 %in% c(1,2,4,8,9,10,11,14)], group.by = "SCT_snn_res.0.3", features = unique((markers.res03.unkidneylike %>% dplyr::group_by(cluster) %>% top_n(7, diff))$gene))
+StrDotPlot(s4[, s4$SCT_snn_res.0.3 %in% c(1,2,4,8,9,10,11,14)], group.by = "SCT_snn_res.0.3", features = markers.for.test)
+```
+
+```{r}
+png(res = 600, filename = "data/figures/Stage4_offtarget_DEG_Strdotplot.png",units = "mm", width = 280, height = 100) 
+StrDotPlot(s4[, s4$SCT_snn_res.0.3 %in% c(1,2,4,8,9,10,11,14)], group.by = "SCT_snn_res.0.3", features = markers.for.test) & theme(text = element_text(size = 20))
+dev.off()
+```
+
+```{r}
+write_csv(markers.res03.unkidneylike, "data/tables/S4_non-kidney_markers.csv")
+```
+
+
+## annotation
+c10 - glia, oligodendrocytes
+c14 - myogenic muscle
+c4 - satellite muscle
+c1 - astrocyte
+c8 - astrocyte
+c11 - neuron
+
+
+```{r}
+df.rownames <- s4@meta.data %>% rownames_to_column() %>% dplyr::select(rowname)
+df.list <- map(0:14, ~s4@meta.data %>% rownames_to_column() %>% filter(SCT_snn_res.0.3 == .x))
+names(df.list) <- as.character(0:14)
+df.list[["0"]] <- df.list[["0"]] %>% 
+  mutate(ann = case_when(LineageID == "Stroma" ~ DKCC,
+                         LineageID == "unassigned" ~ "Metanephric",
+                         LineageID == "NPC-like" ~ "Metanephric"))
+df.list[["1"]] <- df.list[["1"]] %>% 
+  mutate(ann = "Astrocyte-like")
+df.list[["2"]] <- df.list[["2"]] %>% 
+  mutate(ann = "Mixed")
+df.list[["3"]] <- df.list[["3"]] %>% 
+  mutate(ann = case_when(LineageID == "Nephron" ~ DKCC,
+                         LineageID == "NPC" ~ "NPC",
+                         LineageID == "Stroma" ~ DKCC,
+                         LineageID == "unassigned" ~ "Metanephric",
+                         LineageID == "NPC-like" ~ "Metanephric"))
+df.list[["4"]] <- df.list[["4"]] %>% 
+  mutate(ann = "Satellite-cells")
+df.list[["5"]] <- df.list[["5"]] %>% 
+  mutate(ann = case_when(LineageID == "Nephron" ~ DKCC,
+                         LineageID == "NPC" ~ "NPC",
+                         LineageID == "Stroma" ~ DKCC,
+                         LineageID == "UrEp" ~DKCC,
+                         LineageID == "Endo" ~ "Endo",
+                         LineageID == "unassigned" ~ "Metanephric",
+                         LineageID == "NPC-like" ~ "Metanephric"))
+df.list[["6"]] <- df.list[["6"]] %>% 
+  mutate(ann = case_when(LineageID == "Nephron" ~ DKCC,
+                         LineageID == "NPC" ~ "NPC",
+                         LineageID == "Stroma" ~ DKCC,
+                         LineageID == "UrEp" ~DKCC,
+                         LineageID == "unassigned" ~ "Metanephric",
+                         LineageID == "NPC-like" ~ "Metanephric"))
+df.list[["7"]] <- df.list[["7"]] %>% 
+  mutate(ann = case_when(LineageID == "Nephron" ~ DKCC,
+                         LineageID == "NPC" ~ "NPC",
+                         LineageID == "Stroma" ~ DKCC,
+                         LineageID == "UrEp" ~DKCC,
+                         LineageID == "Endo" ~ "Endo",
+                         LineageID == "unassigned" ~ "Metanephric",
+                         LineageID == "NPC-like" ~ "Metanephric"))
+df.list[["8"]] <- df.list[["8"]] %>% 
+  mutate(ann = "Astrocyte-like")
+df.list[["9"]] <- df.list[["9"]] %>% 
+  mutate(ann = "PRRX1/2-PreMuscle")
+df.list[["10"]] <- df.list[["10"]] %>% 
+  mutate(ann = "Glia-like")
+df.list[["11"]] <- df.list[["11"]] %>% 
+  mutate(ann = "Neural-like")
+df.list[["12"]] <- df.list[["12"]] %>% 
+  mutate(ann = case_when(LineageID == "Nephron" ~ DKCC,
+                         LineageID == "NPC" ~ "NPC",
+                         LineageID == "Stroma" ~ DKCC,
+                         LineageID == "unassigned" ~ "Metanephric",
+                         LineageID == "NPC-like" ~ "Metanephric"))
+df.list[["13"]] <- df.list[["13"]] %>% 
+  mutate(ann = case_when(LineageID == "Nephron" ~ DKCC,
+                         LineageID == "NPC" ~ "NPC",
+                         LineageID == "Stroma" ~ DKCC,
+                         LineageID == "unassigned" ~ "Metanephric",
+                         LineageID == "NPC-like" ~ "Metanephric"))
+df.list[["14"]] <- df.list[["14"]] %>% 
+  mutate(ann = "Myocyte-like")
+df.merge <- bind_rows(df.list)
+df.merge$ann %>% table()
+
+ordered.values <- left_join(df.rownames, df.merge, by = "rowname")
+s4$ann <- ordered.values$ann
+```
+Remove metanephric as false negatives?
+
+```{r}
+new.col <- c(myColours()[c(unique(s4$DKCC))], ggplotColors(8))
+names(new.col) <- c(names(new.col)[1:20], 
+                    "Astrocyte-like", "Glia-like", "Metanephric", "Mixed", "Neural-like",
+                    "Satellite-cells", "PRRX1/2-PreMuscle", "Myocyte-like")
+s4$ann <- as.character(s4$ann)
+DimPlot(s4, group.by = "ann", label = T, repel = T, cols = new.col)
+DimPlot(s4[, s4$SCT_snn_res.0.3 %in% c(3,5,6,7,13)], group.by = "ann")
+```
+
+```{r, fig.width=16}
+DimPlot(s4, group.by = "ann", label = T, repel = T, cols = new.col, label.size = 5) & NoAxes() & theme(text = element_text(size = 25))
+```
+
+
+```{r}
+#png(res = 300, filename = "data/figures/Stage4_UMAP_LinID_split.png",units = "mm", width = 1200, height = 200)
+pop.types <- list(nephron = c("NPC", "EN", "PEC", "EPod", "Pod", "EPT", "PT", "EDT", "LOH", "DT", "UOS", "UTip", "UIS"),
+                  stroma = c("SPC", "MS", "CS", "MesS"),
+                  offtarget = c("Myocyte-like", "Satellite-cells", "PRRX1/2-PreMuscle", "Astrocyte-like", "Glia-like", "Neural-like", "Mixed"))
+map(pop.types, ~DimPlot(s4, cells.highlight = list(rownames(s4@meta.data %>% filter(ann %in% .x))), 
+                                                                              cols.highlight = new.col[names(new.col) %in% .x]) + ggtitle(.x) +
+  NoAxes() & theme(text = element_text(size = 25), legend.position = "none"))  %>%  wrap_plots(ncol = 6)
+#dev.off()
+```
+
+```{r}
+nephron.list <- map(pop.types$nephron, ~rownames(s4@meta.data %>% filter(ann %in% .x)))
+names(nephron.list) <- pop.types$nephron
+DimPlot(s4, cells.highlight = nephron.list, sizes.highlight = 0.2,
+        cols.highlight = rev(new.col[pop.types$nephron][order(pop.types$nephron)]))
+
+stroma.list <- map(pop.types$stroma, ~rownames(s4@meta.data %>% filter(ann %in% .x)))
+names(stroma.list) <- pop.types$stroma
+DimPlot(s4, cells.highlight = stroma.list, sizes.highlight = 0.2,
+        cols.highlight = rev(new.col[pop.types$stroma][order(pop.types$stroma)]))
+
+ot.list <- map(pop.types$offtarget, ~rownames(s4@meta.data %>% filter(ann %in% .x)))
+names(ot.list) <- pop.types$offtarget
+DimPlot(s4, cells.highlight = ot.list, sizes.highlight = 0.2,
+        cols.highlight = rev(new.col[pop.types$offtarget][order(pop.types$offtarget)]))
+```
+
+```{r}
+png(res = 600, filename = "data/figures/Stage4_ann_UMAP_split.png",units = "mm", width = 800, height = 200) 
+
+(DimPlot(s4, cells.highlight = nephron.list, sizes.highlight = 0.1,
+        cols.highlight = rev(new.col[pop.types$nephron][order(pop.types$nephron)])) & NoAxes()& theme(text = element_text(size = 30))) |
+(DimPlot(s4, cells.highlight = stroma.list, sizes.highlight = 0.1,
+        cols.highlight = rev(new.col[pop.types$stroma][order(pop.types$stroma)])) & NoAxes()& theme(text = element_text(size = 30))) |
+(DimPlot(s4, cells.highlight = ot.list, sizes.highlight = 0.1,
+        cols.highlight = rev(new.col[pop.types$offtarget][order(pop.types$offtarget)])) & NoAxes()& theme(text = element_text(size = 30)))
+dev.off()
+```
+
+Need to decide if metanephric cells at stage 4 get removed or not.
+
+```{r}
+write_rds(s4, "data/rds/Stage4.rds")
+```
+
+
+
