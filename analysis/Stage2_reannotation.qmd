@@ -56,6 +56,7 @@ Melissa and I have reevaluated the data in stage 2 and this document will update
 s2 <- read_rds("data/rds/Stage2.rds")
 stage.md <- read_rds("data/Stages_metadata.rds")
 s2$SCT_snn_res.0.3 <- stage.md$s2$SCT_snn_res.0.3
+s2$SCT_snn_res.3 <- stage.md$s2$SCT_snn_res.3
 ```
 
 
@@ -65,6 +66,8 @@ Plot the UMAPs with groupings of clusters and chir
 
 ```{r}
 DimPlot(s2, group.by = "SCT_snn_res.0.3")
+DimPlot(s2, group.by = "SCT_snn_res.3", label = T, repel = T)
+
 ```
 
 ```{r}
@@ -96,21 +99,21 @@ dev.off()
 s2.markers <- FindAllMarkers(SetIdent(s2, value = "SCT_snn_res.0.3"), only.pos = T, test.use = "t", assay = "RNA") %>% mutate(diff = pct.1-pct.2)
 ```
 
-```{r, fig.width=16}
+```{r, fig.width=12}
 filters <- s2.markers %>% dplyr::group_by(cluster) %>% top_n(5, diff)
 StrDotPlot(s2, group.by = "SCT_snn_res.0.3", features = unique(filters$gene))
 ```
 
 
 ```{r}
-png(res = 300, filename = "data/figures/Stage2_StrDotPlot_res05markers.png",units = "mm", width = 300, height = 75)
+png(res = 300, filename = "data/figures/Stage2_StrDotPlot_res03markers.png",units = "mm", width = 300, height = 75)
 StrDotPlot(s2, group.by = "SCT_snn_res.0.3", features = unique(filters$gene))
 dev.off()
 ```
 
 Check for markers of interest, curated
 
-```{r}
+```{r, fig.width=12, fig.height=12}
 StrDotPlot(s2, group.by = "SCT_snn_res.0.3", features = c("DKK1", "SP5", "CXCR4", "TBX6",
                                                                "HOXA10", "HOXC10", "CDX2", "WNT5A", "CDH6",
                                                                "PAX3", "COL11A1", "MYL9", "COL3A1", "TMEM88",
@@ -163,16 +166,24 @@ plotMDS(dge.s2.c, col=pal[factor(colnames(counts.s2.c))], gene.selection = "comm
 ```
 
 ```{r}
+pearson <- cor(counts.s2.c[s2@assays$SCT@var.features,])
+pearson %>% NMF::aheatmap()
+```
+
+
+
+```{r}
 ref.dge <- read_rds(here::here("data/AllRef_dge.rds"))
 share.genes <- intersect(rownames(ref.dge$counts), rownames(s2))
-
-colnames(counts.s2.c) <- paste0("Stage2_", colnames(counts.s2.c))
-counts.ref.s2 <- bind_cols(ref.dge$counts[share.genes,], counts.s2.c[share.genes,])
+colnames(counts.s2.c) <- paste0("Stage2_c", colnames(counts.s2.c))
+counts.ref.s2 <- bind_cols(list(ref.dge$counts[share.genes,],
+                                budjan.sudo[share.genes,],
+                                counts.s2.c[share.genes,]))
 
 group=c(rep("Minn", 6), 
         rep("Tyser", 8), 
-        rep("DC",5), 
-        rep("TanE9", 8),
+        rep("DiazCuadros",5), 
+        rep("Tan_mouse", 8),
         rep("Stage2", 10))
 
 corrected_data = sva::ComBat_seq(counts = as.matrix(counts.ref.s2), batch = group)
@@ -188,6 +199,14 @@ dge.ref.s2$genes <- ann[match(rownames(dge.ref.s2),ann$SYMBOL),]
 ```
 
 ```{r, fig.width=12, fig.height=12}
+vg <- s2@assays$SCT@var.features
+vg <- vg[vg %in% rownames(dge.ref.s2$counts)]
+p <- cor(dge.ref.s2$counts[vg,1:31])
+NMF::aheatmap(p, border_color = "black", treeheight = c(0, 50))
+```
+
+
+```{r, fig.width=12, fig.height=12}
 s2.markers.f <- s2.markers %>% arrange(-avg_log2FC)
 
 genes <- unique(s2.markers.f$gene[s2.markers.f$gene %in% rownames(dge.ref.s2$counts)])[1:1000]
@@ -199,6 +218,7 @@ genes <- s2.markers$gene[s2.markers$gene %in% rownames(dge.s2.c$counts)]
 pearson <- cor(dge.s2.c$counts[genes,])
 NMF::aheatmap(pearson, border_color = "black", treeheight = c(0, 50))
 ```
+
 
 
 ```{r}
@@ -216,18 +236,19 @@ StrDotPlot(s2, group.by = "SCT_snn_res.0.3",
                         "TCF15",
                         "SP5", "FGF8","TBX6", 
                         "FOXF1",
-                        "SOX2",
-                        "TAGLN", "NEFM"), dot.scale = 10)
+                        "SOX2", "PAX3", 
+                        "TAGLN", "NEFM", "NTM", "CRABP1"), dot.scale = 10)
+FeaturePlot(s2, features = c("FGF8"), order = T)
 ```
 
 ```{r}
 png(res = 300, filename = "data/figures/Stage2_strdotplot_keygenes.png",units = "mm", width = 150, height = 80)
 StrDotPlot(s2, group.by = "SCT_snn_res.0.3",
-           features = c("SP5", "FGF8","TBX6", 
-                        "OSR1", "ITGA8", "HOXA10", "HOXD10", "HOXD11", "PAX2", "PAX8", "SALL1", "EYA1",
-                        "TCF15",
-                        "PAX3", "SOX2",
-                        "TAGLN", "NEFM",
+           features = c("SP5", "DLL3", "FGF8","TBX6", 
+                        "MIXL1","SOX2", "PAX3",  "TCF15",
+                        "OSR1", "ITGA8", "PAX2", "PAX8", "SALL1", "EYA1",
+                       
+                        "NTM", "GDF10", "CRABP1", 
                         "FOXF1"), dot.scale = 6)
 dev.off()
 ```
@@ -238,15 +259,15 @@ dev.off()
 ```{r}
 s2ann <- s2@meta.data %>% mutate(SCT_snn_res.0.3 = as.character(SCT_snn_res.0.3)) %>%
   mutate(ann = case_when(SCT_snn_res.0.3 == "0" ~ "IM_1",
-                         SCT_snn_res.0.3 == "1" ~ "NMP_IM_1",
+                         SCT_snn_res.0.3 == "1" ~ "nc_Meso", # non-committed mesoderm
                          SCT_snn_res.0.3 == "2" ~ "IM_2",
-                         SCT_snn_res.0.3 == "3" ~ "PM_1",
-                         SCT_snn_res.0.3 == "4" ~ "PM_2",
+                         SCT_snn_res.0.3 == "3" ~ "PM_1", # paraxial 1
+                         SCT_snn_res.0.3 == "4" ~ "PM_2", # paraxial 2
                          SCT_snn_res.0.3 == "5" ~ "IM_3",
-                         SCT_snn_res.0.3 == "6" ~ "NMP_IM_2",
-                         SCT_snn_res.0.3 == "7" ~ "NMP_1",
-                         SCT_snn_res.0.3 == "8" ~ "PSM",
-                         SCT_snn_res.0.3 == "9" ~ "NMP_2",
+                         SCT_snn_res.0.3 == "6" ~ "PSM-to-IM", # population is mostly transitioning fromt he PSM stage to mesoderm
+                         SCT_snn_res.0.3 == "7" ~ "NP_1", #neural progenitor 1
+                         SCT_snn_res.0.3 == "8" ~ "PSM", # PSM
+                         SCT_snn_res.0.3 == "9" ~ "NP_2", # neural progenitor 2
                          TRUE ~ SCT_snn_res.0.3))
 
 write_csv(s2ann, here::here("data/tables/Stage2_Annotation_df.csv"))
@@ -279,5 +300,9 @@ png(res = 600, filename = "data/figures/Stage2_blendedUMAP_IM_PM_NMP.png",units 
 (FeaturePlot(s2, features = c("PAX3", "SOX2"), blend = T, order=T, pt.size = 1) & NoAxes()) /
 (FeaturePlot(s2, features = c("TCF15", "PAX8"), blend = T, order=T, pt.size = 1) & NoAxes())
 dev.off()
+```
+
+```{r}
+write_rds(s2, "data/rds/Stage2.rds")
 ```
 
