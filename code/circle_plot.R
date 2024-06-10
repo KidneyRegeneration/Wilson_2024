@@ -1,4 +1,4 @@
-CoruscantPlot <- function(seurat, column, group, segment, show.pct = T, plot.out = "globe", get.df = F, ylim=20, lab.dist=6, text.size=3) {
+CoruscantPlot <- function(seurat, column, group, segment, show.pct = T, plot.out = "globe", get.df = F, ylim=20, lab.dist=6, text.size=3, position = "stack") {
   Pct = NULL
   Cells = NULL
   Component = NULL
@@ -79,7 +79,7 @@ CoruscantPlot <- function(seurat, column, group, segment, show.pct = T, plot.out
     flat <- ggplot(data) +      
       
       # Add the stacked bar
-      geom_bar(aes(x=as.integer(id), y=Pct, fill=Segment), colour = "black", stat="identity", alpha=0.75) +
+      geom_bar(aes(x=as.integer(id), y=Pct, fill=Segment), colour = "black", stat="identity", alpha=0.75, position = position) +
       viridis::scale_fill_viridis(discrete=TRUE) +
       
       # Add a val=100/75/50/25 lines. I do it at the beginning to make sur barplots are OVER it.
@@ -119,7 +119,7 @@ CoruscantPlot <- function(seurat, column, group, segment, show.pct = T, plot.out
       
       # Add the stacked bar
       #geom_hline(yintercept = 50, alpha=0.3, colour="red", size=0.3) +
-      geom_bar(aes(x=as.integer(id), y=Pct, fill=Segment), colour = "black", stat="identity", alpha=0.75) +
+      geom_bar(aes(x=as.integer(id), y=Pct, fill=Segment), colour = "black", stat="identity", alpha=0.75, position = position) +
       #geom_bar(data = base_data, aes(x=as.integer(Group), y=-CellTotal), colour = "black", stat="identity", alpha=0.75) +
       
       viridis::scale_fill_viridis(discrete=TRUE) +

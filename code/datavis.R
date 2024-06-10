@@ -14,14 +14,15 @@
 #'
 #'@export
 #'
-ComponentBar <- function(seurat, identity, component, show.pct = FALSE, show.text = 25) {
+ComponentBar <- function(seurat.md, identity, component, show.pct = FALSE, show.text = 25) {
   Pct = NULL
   Cells = NULL
   Component = NULL
   Identity = NULL
-  df <- as.data.frame(table(seurat@meta.data[[paste0(identity)]],
-                            seurat@meta.data[[paste0(component)]]))
-  id <- as.data.frame(table(seurat[[paste0(identity)]]))
+
+  df <- as.data.frame(table(seurat.md[[paste0(identity)]],
+                            seurat.md[[paste0(component)]]))
+  id <- as.data.frame(table(seurat.md[[paste0(identity)]]))
   colnames(id) <- c("Identity", "CellTotal")
   colnames(df) <- c("Identity", "Component", "Cells")
   df <- dplyr::left_join(df, id, "Identity")
@@ -227,3 +228,26 @@ MultiDimPlot <- function(seurat,
 #  return(p)
 #
 #}
+
+
+
+
+
+ComponentHeatMapDF <- function(seurat, identity, component, scale = "none", show.pct = FALSE, tidy = T) {
+  Pct = NULL
+  Cells = NULL
+  Component = NULL
+  Identity = NULL
+  
+  df <- as.data.frame(table(as.character(seurat@meta.data[[paste0(identity)]]),
+                            as.character(seurat@meta.data[[paste0(component)]])))
+  id <- as.data.frame(table(seurat[[paste0(identity)]]))
+  colnames(id) <- c("Identity", "CellTotal")
+  colnames(df) <- c("Identity", "Component", "Cells")
+  df <- dplyr::left_join(df, id, "Identity")
+  df$Pct <- round(df$Cells / df$CellTotal * 100, digits = 2)
+  if (!tidy){
+    df <- pivot_wider(df[c("Identity", "Component", "Pct")], names_from = "Component", values_from = "Pct") %>% column_to_rownames("Identity")
+  }
+  return(df)
+}

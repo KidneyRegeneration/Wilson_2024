@@ -110,5 +110,3 @@ write_rds(fs19, "data/rds/FS19.rds")
 s1 <- read_rds("data/rds/Stage1.rds")
 StrDotPlot(s1, group.by = "Ann", features = c("ZFP42", "SOX2", "NANOG", "IFITM3", "PRDM14", "SYCP3", "DAZL", "PRDM1", "STRA8", "NANOS3", "TCL1A", "TFAP2C", "PDPN"))
 
-
-

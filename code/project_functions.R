@@ -80,9 +80,15 @@ pseudobulk <- function(seu, ident) {
     temp.seurat <- seu[, seu@meta.data[,ident] == unique(seu@meta.data[,ident])[i]]
     #temp.seurat <- subset(matorg, ident = unique(matorg$DKCC)[i])
     temp.counts <- as.data.frame(temp.seurat@assays$RNA@counts)
-    temp.bulk <- data.frame(rowSums(temp.counts))
+    temp.bulk <- data.frame(rowSums(temp.counts) %>% edgeR::cpm())
     colnames(temp.bulk) <- c(unique(as.character(seu@meta.data[,ident]))[i])
     counts <- cbind(counts, temp.bulk)
   }
   return(counts)
 }
+
+
+
+allcols <- read_rds("../data/rds/allcols.rds")
+
+gcols <- ggplotColors(5)
