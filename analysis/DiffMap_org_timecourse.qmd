@@ -1,0 +1,623 @@
+---
+title: "Diffusion mapping the organoid timecourse"
+date: "`r Sys.Date()`"
+author: "Sean Wilson"
+output:
+  rmdformats::readthedown:
+  highlight: kate
+  toc: true
+#output:
+#  prettydoc::html_pretty:
+#    theme: cayman
+#    highlight: github
+#    toc: true
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_dir = here::here("docs/"))})
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(rmdformats)
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+source(here::here("code/general_r_functions.R"))
+source(here::here("code/project_functions.R"))
+source(here::here("code/circle_plot.R"))
+source(here::here("code/datavis.R"))
+library(plotly)
+library(destiny)
+seed <- 250395
+## Global options
+options(max.print="500")
+opts_knit$set(width=500, root.dir = here::here())
+opts_chunk$set(echo=FALSE,
+	             cache=FALSE,
+               cache.lazy = FALSE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE,
+               fig.width = 9,
+               fig.height = 6,
+               echo=FALSE)
+opts_knit$set(width=500)
+options(future.globals.maxSize = Inf)
+```
+
+This workbook will generate the diffusion component mapping for all conditions. I will save them as .rds files in "/data/rds/diffmap/"
+
+## Make the function
+
+The below function will take a seurat object and run the diffusion map process on it. Any merging or filtering needs to be run prior to the function. If batch correction is needed, it can be stipulated in the function call.
+
+```{r}
+CalcDiffMap <- function(object, batch.corr = F, batch = NULL ){
+  object@assays$SCT@var.features <- c(object@assays$SCT@var.features[object@assays$SCT@var.features %!in% cc.genes.updated.2019$s.genes],
+                                object@assays$SCT@var.features[object@assays$SCT@var.features %!in% cc.genes.updated.2019$g2m.genes])
+  object <- object %>% SCTransform(seed.use = 250395, vars.to.regress = c("S.Score", "G2M.Score")) %>% 
+            RunPCA(assay = "SCT",npcs=30, verbose=F, seed.use = 250395)
+  if (batch.corr==T){
+    library(simspec)
+    library(Matrix)
+    object <- object %>% cluster_sim_spectrum(label_tag = batch, verbose=F)
+    dm.out <- destiny::DiffusionMap(object@reductions$css@cell.embeddings)
+    return(dm.out)
+  }
+  else {
+    dm.out <- destiny::DiffusionMap(object@reductions$pca@cell.embeddings)
+    return(dm.out)
+  }
+}
+
+```
+
+## All conditions
+
+Load the full dataset
+
+```{r}
+fs19 <- read_rds(here::here("data/rds/KidOrgTimecourse.rds"))
+```
+
+First we visialise the diffusion map coordinates from `diffmap_render.r`
+
+```{r}
+fs19.dm <- read_csv("data/tables/DiffMap_Stage1234.csv")
+fs19.md.noipsc <- fs19@meta.data %>% filter(stage != "iPSC")
+points <- sample(1:nrow(fs19.md.noipsc), size = 5000)
+```
+
+```{r, fig.width=12, fig.height=6}
+(ggplot((fs19.dm %>% mutate(Stage = fs19.md.noipsc$stage))[points,]) +
+  geom_point(aes(-DC1, -DC2, colour = Stage))) +
+
+(ggplot((fs19.dm %>% mutate(Stage = fs19.md.noipsc$stage))[points,]) +
+  geom_point(aes(-DC3, -DC2, colour = Stage))) + plot_layout(design = "abbb", guides = "collect")
+```
+
+It is a clear transition from stage 2 to 3 to 4. 
+
+The 0,0 point seems to be the central region of the third stage and moving in the negative DC2 direction leads to kidney while the negative DC3 direction (reversed in the above graph) leads to the off target cell populations.
+
+
+
+
+```{r, fig.width=12, fig.height=6}
+ggplot((fs19.dm %>% mutate(Ann = ann))[points,]) +
+  geom_point(aes(-DC3, -DC2, colour = Ann))
+
+
+```
+
+```{r}
+plot_ly((fs19.dm %>% mutate(Ann = ann))[points,], 
+        type="scatter3d", mode = 'markers',
+        x = ~DC1, 
+        y = ~-DC2,
+        z = ~-DC3,
+        marker = list(opacity = 0.7, size=2),
+        color = ann[points]) 
+```
+Break it down stage by stage for better clarity
+
+```{r}
+map(unique( fs19.md.noipsc$stage), ~
+      ggplot((fs19.dm %>% mutate(Ann = fs19.md.noipsc$ann,
+                                 Stage =  fs19.md.noipsc$stage))[points,] %>% filter(Stage == .x)) +
+      geom_point(aes(-DC3, -DC2, colour = Ann))
+)
+map(unique( fs19.md.noipsc$stage), ~
+      ggplot((fs19.dm %>% mutate(Ann = fs19.md.noipsc$ann,
+                                 Stage =  fs19.md.noipsc$stage))[points,] %>% filter(Stage == .x)) +
+      geom_jitter(aes(-DC3, Ann, colour = Ann))
+)
+
+map(unique( fs19.md.noipsc$stage), ~
+      ggplot((fs19.dm %>% mutate(Ann = fs19.md.noipsc$ann,
+                                 Stage =  fs19.md.noipsc$stage))[points,] %>% filter(Stage == .x)) +
+      geom_smooth(aes(-DC3,  -DC2, colour = Ann))
+)
+
+map(unique( fs19.md.noipsc$stage), ~
+      ggplot((fs19.dm %>% mutate(Ann = fs19.md.noipsc$ann,
+                                 Stage =  fs19.md.noipsc$stage))[points,] %>% filter(Stage == .x)) +
+      geom_jitter(aes(-DC2, Ann, colour = Ann))
+)
+```
+
+Just the stage 2 but split into IM and Not IM
+
+```{r}
+ggplot((fs19.dm %>% mutate(Ann = fs19.md.noipsc$ann,
+                                 Stage =  fs19.md.noipsc$stage))[points,] %>% filter(Stage == "Stage2", Ann %in% c("IM_1", "IM_2", "IM_3", "NMP_IM_2", "PSM"))) +
+      geom_jitter(aes(-DC3, -DC2, colour = Ann)) + lims(x = c(-0.005, 0), y = c(-0.003, 0.001))
+
+ggplot((fs19.dm %>% mutate(Ann = fs19.md.noipsc$ann,
+                                 Stage =  fs19.md.noipsc$stage))[points,] %>% filter(Stage == "Stage2", Ann %in% c("PM_1", "PM_2", "NMP_1", "NMP_2", "NMP_IM_1", "PSM"))) +
+      geom_jitter(aes(-DC3, -DC2, colour = Ann)) + lims(x = c(-0.005, 0), y = c(-0.003, 0.001))
+```
+
+
+
+group the annotated pop types 
+
+```{r}
+pop.types <- list(nephron = c("NPC", "EN", "PEC", "EPod", "Pod", "EPT", "PT", "EDT", "LOH", "DT", "UOS", "UTip", "UIS"),
+                  stroma = c("SPC", "MS", "CS", "MesS"),
+                  offtarget = c("Myocyte-like", "Satellite-cells", "PRRX1/2-PreMuscle", 
+                                "Astrocyte-like", "Glia-like", "Neural-like", "Stalled-NMP-MM"))
+```
+
+Plot them as a violin/jitter plot that shows the distributino of Nephron linage along DC2 and Stroma/off target along DC3
+
+```{r, fig.height=6, fig.width=6}
+ggplot((fs19.dm %>% mutate(Ann = ann,
+                                 Stage = stage,
+                                 CHIR = fs19.md.noipsc$chir))[points,] %>% 
+         filter(Ann %in% c("PSM", "PM_1", "PM_2", "NMP_1", "NMP_2", "NMP_IM_1", "NMP_IM_2",
+                           "Dermomyotome-like", "Metanephric", "NMP-like", "Stroma", "Uncommitted_IM",
+                           pop.types$stroma, pop.types$offtarget)) %>% 
+         mutate(Ann = factor(Ann, levels = c("PSM", "PM_1", "PM_2", "NMP_1", "NMP_2", "NMP_IM_1", "NMP_IM_2",
+                           "Dermomyotome-like", "Metanephric", "NMP-like", "Stroma", "Uncommitted_IM",
+                           pop.types$stroma, pop.types$offtarget)),
+                Ann = fct_reorder(Ann, -DC3))) +
+  #geom_jitter(aes(-DC3, Ann, colour = Stage), size = 0.3) +
+      geom_violin(aes(-DC3, Ann, colour = Stage), alpha = 0.7) +
+  theme_minimal()
+
+ggplot((fs19.dm %>% mutate(Ann = ann,
+                                 Stage = stage,
+                                 CHIR = fs19.md.noipsc$chir))[points,] %>% 
+         filter(Ann %in% c("PSM", "IM_1", "IM_2", "IM_3", "NMP_IM_1", "NMP_IM_2",
+                           "Nephron", 
+                           pop.types$nephron)) %>% 
+         mutate(Ann = factor(Ann, levels = c("PSM", "IM_1", "IM_2", "IM_3", "NMP_IM_1", "NMP_IM_2",
+                           "Nephron", 
+                           pop.types$nephron)),
+                Ann = fct_reorder(Ann, -DC2))) +
+  #geom_jitter(aes(-DC2, Ann, colour = Stage), size = 0.3) +
+      geom_violin(aes(-DC2, Ann, colour = Stage), alpha = 0.7) +
+  theme_minimal()
+
+ggplot((fs19.dm %>% mutate(Ann = fs19.md.noipsc$ann,
+                                 Stage = fs19.md.noipsc$stage,
+                                 CHIR = fs19.md.noipsc$chir))[points,] %>% 
+         filter(Ann %in% c("PSM", "PM_1", "PM_2", "NMP_1", "NMP_2", "NMP_IM_1", "NMP_IM_2", "IM_1", "IM_2", "IM_3", 
+                           "Dermomyotome-like", "Metanephric", "NMP-like", "Stroma", "Uncommitted_IM",
+                           pop.types$stroma, pop.types$offtarget)) %>% 
+         mutate(Ann = factor(Ann, levels = c("PSM", "PM_1", "PM_2", "NMP_1", "NMP_2", "NMP_IM_1", "NMP_IM_2", "IM_1", "IM_2", "IM_3",
+                           "Dermomyotome-like", "Metanephric", "NMP-like", "Stroma", "Uncommitted_IM",
+                           pop.types$stroma, pop.types$offtarget)),
+                Ann = fct_reorder(Ann, -DC3))) +
+  #geom_jitter(aes(-DC3, Ann, colour = Stage), size = 0.3) +
+      geom_violin(aes(-DC3, Ann, colour = Stage), alpha = 0.7) +
+  theme_minimal()
+
+ggplot((fs19.dm %>% mutate(Ann = fs19.md.noipsc$ann,
+                                 Stage = fs19.md.noipsc$stage,
+                                 CHIR = fs19.md.noipsc$chir))[points,] %>% 
+         filter(Ann %in% c("PSM", "PM_1", "PM_2", "NMP_1", "NMP_2", "IM_1", "IM_2", "IM_3", "NMP_IM_1", "NMP_IM_2",
+                           "Nephron", 
+                           pop.types$nephron)) %>% 
+         mutate(Ann = factor(Ann, levels = c("PSM", "PM_1", "PM_2", "NMP_1", "NMP_2", "IM_1", "IM_2", "IM_3", "NMP_IM_1", "NMP_IM_2",
+                           "Nephron", 
+                           pop.types$nephron)),
+                Ann = fct_reorder(Ann, -DC2))) +
+  #geom_jitter(aes(-DC2, Ann, colour = Stage), size = 0.3) +
+      geom_violin(aes(-DC2, Ann, colour = Stage), alpha = 0.7) +
+  theme_minimal()
+
+
+```
+
+Try the ranking feature and see how it looks
+
+
+```{r, fig.height=6, fig.width=6}
+
+ggplot((fs19.dm %>% mutate(Ann = ann,
+                                 Stage = stage,
+                                 CHIR = fs19.md.noipsc$chir,
+                           DC3rank = rank(-DC3)))[points,] %>% 
+         filter(Ann %in% c("PSM", "PM_1", "PM_2", "NMP_1", "NMP_2", "NMP_IM_1", "NMP_IM_2",
+                           "Dermomyotome-like", "Metanephric", "NMP-like", "Stroma", "Uncommitted_IM",
+                           pop.types$stroma, pop.types$offtarget)) %>% 
+         mutate(Ann = factor(Ann, levels = c("PSM", "PM_1", "PM_2", "NMP_1", "NMP_2", "NMP_IM_1", "NMP_IM_2",
+                           "Dermomyotome-like", "Metanephric", "NMP-like", "Stroma", "Uncommitted_IM",
+                           pop.types$stroma, pop.types$offtarget)),
+                Ann = fct_reorder(Ann, DC3rank))) +
+  #geom_jitter(aes(-DC3, Ann, colour = Stage), size = 0.3) +
+      geom_violin(aes(DC3rank, Ann, colour = Stage), alpha = 0.7) +
+  theme_minimal()
+
+ggplot((fs19.dm %>% mutate(Ann = ann,
+                                 Stage = stage,
+                                 CHIR = fs19.md.noipsc$chir,
+                           DC2rank = rank(-DC2)))[points,] %>% 
+         filter(Ann %in% c("PSM", "IM_1", "IM_2", "IM_3", "NMP_IM_1", "NMP_IM_2",
+                           "Nephron", 
+                           pop.types$nephron)) %>% 
+         mutate(Ann = factor(Ann, levels = c("PSM", "IM_1", "IM_2", "IM_3", "NMP_IM_1", "NMP_IM_2",
+                           "Nephron", 
+                           pop.types$nephron)),
+                Ann = fct_reorder(Ann, DC2rank))) +
+  #geom_jitter(aes(-DC2, Ann, colour = Stage), size = 0.3) +
+      geom_violin(aes(DC2rank, Ann, colour = Stage), alpha = 0.7) +
+  theme_minimal()
+```
+
+Might look better with the single stage or2 2-stage tranistions.
+
+
+## Single stages
+
+load the diffmaps for each stage calculated individually 
+
+```{r}
+s2.dm <- read_csv("data/tables/DiffMap_Stage2.csv")
+s2.md <- fs19@meta.data %>% filter(stage == "Stage2")
+points <- sample(1:nrow(s2.md), size = 10000)
+
+
+```
+
+```{r, fig.width=12, fig.height=6}
+(ggplot((s2.dm %>% mutate(Ann = s2.md$ann))[points,] %>% filter(Ann %in% c("PSM", "IM_1", "IM_2", "IM_3", "NMP_IM_2", "PM_1", "PM_2", "NMP_1", "NMP_2", "NMP_IM_1"))) +
+  geom_point(aes(DC1, DC2, colour = Ann))) + theme_linedraw()
+
+(ggplot((s2.dm %>% mutate(Ann = s2.md$ann))[points,] %>% filter(Ann %in% c("PSM", "IM_1", "IM_2", "IM_3", "NMP_IM_2"))) +
+  geom_point(aes(DC1, DC2, colour = Ann))) + theme_linedraw()
+
+
+```
+
+```{r}
+blist <- list()
+for (i in 3:5){
+  blist[[paste0("chir", i)]] <- 
+  map(1:6, ~
+(ggplot((s2.dm %>% mutate(Stage = (s2.md)$stage,
+                                  Ann = (s2.md)$ann,
+                            GF = s2.md$gf,
+                            CHIR = s2.md$chir)) %>% 
+          filter(GF == c("4F", "4F200", "4FA", "4FC", "4FL", "4E")[.x],
+                 CHIR == paste0(i, "c"))) +
+  geom_point(aes(DC1, DC2, colour = Ann), size = 0.2)) +
+  lims(x = c(-0.01, 0.02), y = c(-0.05, 0.015)) +
+  ggtitle(paste0(i, "c", c("4F", "4F200", "4FA", "4FC", "4FL", "4E")[.x])) +
+  geom_hline(yintercept=0) + geom_vline(xintercept=0) +
+  theme_linedraw()
+)
+}
+blist
+
+```
+
+
+```{r}
+clist <- list()
+for (i in 3:5){
+  clist[[paste0("chir", i)]] <- 
+  map(1:3, ~
+(ggplot((s2.dm %>% mutate(Stage = (s2.md)$stage,
+                                  Ann = (s2.md)$ann,
+                            GF = s2.md$gf,
+                            CHIR = s2.md$chir)) %>% 
+          filter(GF == c("4F","4FC")[.x],
+                 CHIR == paste0(i, "c"))) +
+  geom_point(aes(DC1, DC2, colour = Ann), size = 0.2)) +
+  lims(x = c(-0.01, 0.02), y = c(-0.05, 0.015)) +
+  ggtitle(paste0(i, "c", c("4F","4FC")[.x])) +
+  geom_hline(yintercept=0) + geom_vline(xintercept=0) +
+  theme_linedraw()
+)
+}
+clist
+```
+
+
+```{r}
+plot_ly((s2.dm %>% mutate(Ann = s2.md$ann))[points,], 
+        type="scatter3d", mode = 'markers',
+        x = ~DC1, 
+        y = ~-DC2,
+        z = ~-DC3,
+        marker = list(opacity = 0.5, size=5),
+        color = s2.md$ann[points]) 
+```
+
+
+Plot them as a violin/jitter plot that shows the distributino lineages
+
+```{r, fig.height=6, fig.width=6}
+ggplot((s2.dm %>% mutate(Ann = s2.md$ann,
+                                 Stage = s2.md$stage,
+                                 CHIR = s2.md$chir))[points,]) +
+         #filter(Ann %in% c("PSM", "PM_1", "PM_2", "NMP_1", "NMP_2", "NMP_IM_1", "NMP_IM_2",
+         #                  "Dermomyotome-like", "Metanephric", "NMP-like", "Stroma", "Uncommitted_IM",
+         #                  pop.types$stroma, pop.types$offtarget)) %>% 
+         #mutate(Ann = factor(Ann, levels = c("PSM", "PM_1", "PM_2", "NMP_1", "NMP_2", "NMP_IM_1", "NMP_IM_2",
+         #                  "Dermomyotome-like", "Metanephric", "NMP-like", "Stroma", "Uncommitted_IM",
+         #                  pop.types$stroma, pop.types$offtarget)),
+         #       Ann = fct_reorder(Ann, -DC3))) +
+  #geom_jitter(aes(-DC3, Ann, colour = Stage), size = 0.3) +
+      geom_violin(aes(DC1, Ann, colour = Stage), alpha = 0.7) +
+  theme_minimal()
+
+ggplot((s2.dm %>% mutate(Ann = s2.md$ann,
+                                 Stage = s2.md$stage,
+                                 CHIR = s2.md$chir))[points,]) +
+         #filter(Ann %in% c("PSM", "PM_1", "PM_2", "NMP_1", "NMP_2", "NMP_IM_1", "NMP_IM_2",
+         #                  "Dermomyotome-like", "Metanephric", "NMP-like", "Stroma", "Uncommitted_IM",
+         #                  pop.types$stroma, pop.types$offtarget)) %>% 
+         #mutate(Ann = factor(Ann, levels = c("PSM", "PM_1", "PM_2", "NMP_1", "NMP_2", "NMP_IM_1", "NMP_IM_2",
+         #                  "Dermomyotome-like", "Metanephric", "NMP-like", "Stroma", "Uncommitted_IM",
+         #                  pop.types$stroma, pop.types$offtarget)),
+         #       Ann = fct_reorder(Ann, -DC3))) +
+  #geom_jitter(aes(-DC3, Ann, colour = Stage), size = 0.3) +
+      geom_violin(aes(DC2, Ann, colour = Stage), alpha = 0.7) +
+  theme_minimal()
+
+ggplot((s2.dm %>% mutate(Ann = s2.md$ann,
+                                 Stage = s2.md$stage,
+                                 CHIR = s2.md$chir))[points,]) +
+         #filter(Ann %in% c("PSM", "PM_1", "PM_2", "NMP_1", "NMP_2", "NMP_IM_1", "NMP_IM_2",
+         #                  "Dermomyotome-like", "Metanephric", "NMP-like", "Stroma", "Uncommitted_IM",
+         #                  pop.types$stroma, pop.types$offtarget)) %>% 
+         #mutate(Ann = factor(Ann, levels = c("PSM", "PM_1", "PM_2", "NMP_1", "NMP_2", "NMP_IM_1", "NMP_IM_2",
+         #                  "Dermomyotome-like", "Metanephric", "NMP-like", "Stroma", "Uncommitted_IM",
+         #                  pop.types$stroma, pop.types$offtarget)),
+         #       Ann = fct_reorder(Ann, -DC3))) +
+  #geom_jitter(aes(-DC3, Ann, colour = Stage), size = 0.3) +
+      geom_violin(aes(DC3, Ann, colour = Stage), alpha = 0.7) +
+  theme_minimal()
+
+
+## only PSM, IM and NMP_IM_2 pops
+
+ggplot((s2.dm %>% mutate(Ann = s2.md$ann,
+                                 Stage = s2.md$stage,
+                                 CHIR = s2.md$chir))[points,] %>% 
+         filter(Ann %in% c("PSM", "IM_1", "IM_2", "IM_3", "NMP_IM_2")) %>%  
+         mutate(Ann = factor(Ann, levels = c("PSM", "IM_1", "IM_2", "IM_3", "NMP_IM_2")),
+                Ann = fct_reorder(Ann, -DC2))) +
+  #geom_jitter(aes(-DC3, Ann, colour = Stage), size = 0.3) +
+      geom_violin(aes(DC2, Ann, colour = Ann), alpha = 0.7) +
+  
+  theme_minimal()
+
+```
+
+
+load the diffmaps for each stage calculated individually 
+
+```{r}
+s3.dm <- read_csv("data/tables/DiffMap_Stage3.csv")
+s3.md <- fs19[, fs19$stage == "Stage3"]@meta.data
+points <- sample(1:nrow(s3.md), size = 5000)
+stage <- s3.md$stage
+ann <- s3.md$ann
+
+```
+
+```{r, fig.width=12, fig.height=6}
+(ggplot((s3.dm %>% mutate(Ann = ann))[points,]) +
+  geom_point(aes(DC1, DC2, colour = Ann))) + 
+
+(ggplot((s3.dm %>% mutate(Ann = ann))[points,]) +
+  geom_point(aes(DC3, DC1, colour = Ann)))
+```
+
+```{r}
+plot_ly((s3.dm %>% mutate(Ann = s3.md$ann))[points,], 
+        type="scatter3d", mode = 'markers',
+        x = ~DC1, 
+        y = ~-DC2,
+        z = ~-DC3,
+        marker = list(opacity = 0.7, size=2),
+        color = s3.md$ann[points]) 
+```
+
+
+load the diffmaps for each stage calculated individually 
+
+```{r}
+s4.dm <- read_csv("data/tables/DiffMap_Stage4.csv")
+s4.md <- fs19[, fs19$stage == "Stage4"]@meta.data
+points <- sample(1:nrow(s4.md), size = 5000)
+stage <- s4.md$stage
+ann <- s4.md$ann
+
+```
+
+```{r, fig.width=12, fig.height=6}
+(ggplot((s4.dm %>% mutate(Ann = ann))[points,]) +
+  geom_point(aes(DC1, DC2, colour = Ann))) + 
+
+(ggplot((s4.dm %>% mutate(Ann = ann))[points,]) +
+  geom_point(aes(DC3, DC1, colour = Ann)))
+```
+
+```{r}
+plot_ly((s4.dm %>% mutate(Ann = ann))[points,], 
+        type="scatter3d", mode = 'markers',
+        x = ~DC1, 
+        y = ~-DC2,
+        z = ~-DC3,
+        marker = list(opacity = 0.7, size=2),
+        color = s4.md$ann[points]) 
+
+```
+
+try with individual populations
+
+```{r}
+(s4.dm %>% mutate(Ann = s4.md$ann))[points,] %>% filter(Ann %in% pop.types$offtarget) %>% 
+plot_ly( 
+        type="scatter3d", mode = 'markers',
+        x = ~DC1, 
+        y = ~-DC2,
+        z = ~-DC3,
+        marker = list(opacity = 0.7, size=2),
+        color = ((s4.dm %>% mutate(Ann = s4.md$ann))[points,] %>% filter(Ann %in% pop.types$offtarget))$Ann) 
+```
+
+
+
+The single stage Diffusion maps that are based on the PCs show quite linear differentations down pathways - at stage 4 Pod, PT and DT all have specific axes of differentiation. The same is true at stage 3 for nephron, stroma, NMP-like and dermomyotome
+
+## All stages 1 condition
+
+Look at each condition set seperately
+
+```{r}
+dms <- map(c("4F", "4F200", "4FA", "4FC", "4FL", "4E"), ~read_csv(paste0("data/tables/DiffMap_Cond_", .x, ".csv")))
+```
+
+
+
+```{r}
+map(1:6, 
+    ~ggplot((dms[[.x]] %>% mutate(Stage = (fs19.md.noipsc %>% filter(gf == c("4F", "4F200", "4FA", "4FC", "4FL", "4E")[.x]))$stage,
+                                  Ann = (fs19.md.noipsc %>% filter(gf == c("4F", "4F200", "4FA", "4FC", "4FL", "4E")[.x]))$ann))) +
+  geom_point(aes(DC1, DC2, colour = Ann), size = 0.1)
+)
+```
+
+Running each condition seperately makes the plots all look different and lose any ability to compare between.
+
+Try splitting out the conditions from the first plot.
+
+```{r}
+map(1:6, ~
+(ggplot((fs19.dm %>% mutate(Stage = (fs19.md.noipsc)$stage,
+                                  Ann = (fs19.md.noipsc)$ann,
+                            GF = fs19.md.noipsc$gf,
+                            CHIR = fs19.md.noipsc$chir)) %>% 
+          filter(GF == c("4F", "4F200", "4FA", "4FC", "4FL", "4E")[.x])) +
+  geom_point(aes(-DC3, -DC2, colour = Stage), size = 0.2)) 
+)
+
+ggplot((fs19.dm %>% mutate(Stage = (fs19.md.noipsc)$stage,
+                                  Ann = (fs19.md.noipsc)$ann,
+                            GF = fs19.md.noipsc$gf,
+                            CHIR = fs19.md.noipsc$chir)) %>% 
+          filter(GF == "4FG11")) +
+  geom_point(aes(-DC3, -DC2, colour = Stage), size = 0.2)
+
+```
+
+```{r, fig.width=16, fig.height=12}
+alist <- list()
+for (i in 3:5){
+  alist[[as.character(i)]] <- 
+  map(1:6, ~
+(ggplot((fs19.dm %>% mutate(Stage = (fs19.md.noipsc)$stage,
+                                  Ann = (fs19.md.noipsc)$ann,
+                            GF = fs19.md.noipsc$gf,
+                            CHIR = fs19.md.noipsc$chir)) %>% 
+          filter(GF == c("4F", "4F200", "4FA", "4FC", "4FL", "4E")[.x],
+                 CHIR == paste0(i, "c"))) +
+  geom_point(aes(-DC3, -DC2, colour = Stage), size = 0.2)) +
+  ggtitle(paste0(i, "c", c("4F", "4F200", "4FA", "4FC", "4FL", "4E")[.x])) +
+  theme_linedraw()
+)
+}
+(alist$`3` %>% wrap_plots(ncol=6, guides = "collect") & theme(axis.text = element_blank(), axis.title = element_blank())) /
+  (alist$`4` %>% wrap_plots(ncol=6, guides = "collect") & theme(axis.text = element_blank(), axis.title = element_blank())) /
+  (alist$`5` %>% wrap_plots(ncol=6, guides = "collect")& theme(axis.text = element_blank(), axis.title = element_blank()))
+```
+
+
+
+More uniform and therefore more useful. 
+
+The FL condition is almost entirely down the non-nephron path.
+Almost no difference in trajectory in 4F, 4F200, 4FA and 4FC, 4FC just includes the earliest part, PSM.
+4E, with no factors, has a broader stage 2 that is closer to stage 3, but fewer eventual nephron pops 
+
+
+```{r}
+dimsplit
+```
+
+
+
+
+
+## Stage transitions
+
+
+### stage 2 to stage 3
+
+```{r}
+s2to3.dm <- read_csv("data/tables/DiffMap_Stages23.csv")
+s2to3.md <- fs19.md.noipsc %>% filter(stage %in% c("Stage2", "Stage3"))
+points <- sample(1:nrow(s2to3.md), size = 5000)
+```
+
+```{r, fig.width=12, fig.height=6}
+(ggplot((s2to3.dm %>% mutate(Ann = s2to3.md$ann))[points,]) +
+  geom_point(aes(DC1, DC2, colour = Ann))) + 
+
+(ggplot((s2to3.dm %>% mutate(Ann = s2to3.md$ann))[points,]) +
+  geom_point(aes(DC3, DC1, colour = Ann)))
+```
+
+```{r}
+plot_ly((s2to3.dm %>% mutate(Ann = s2to3.md$ann))[points,], 
+        type="scatter3d", mode = 'markers',
+        x = ~DC1, 
+        y = ~-DC2,
+        z = ~-DC3,
+        marker = list(opacity = 0.7, size=2),
+        color = s2to3.md$ann[points]) 
+```
+
+
+### stage 3 to stage 4
+
+```{r}
+s3to4.dm <- read_csv("data/tables/DiffMap_Stages34.csv")
+s3to4.md <- fs19.md.noipsc %>% filter(stage %in% c("Stage3", "Stage4"))
+points <- sample(1:nrow(s3to4.md), size = 5000)
+```
+
+```{r, fig.width=12, fig.height=6}
+(ggplot((s3to4.dm %>% mutate(Ann = s3to4.md$ann))[points,]) +
+  geom_point(aes(DC1, DC2, colour = Ann))) + 
+
+(ggplot((s3to4.dm %>% mutate(Ann = s3to4.md$ann))[points,]) +
+  geom_point(aes(DC3, DC1, colour = Ann)))
+```
+
+```{r}
+plot_ly((s3to4.dm %>% mutate(Ann = s3to4.md$ann))[points,], 
+        type="scatter3d", mode = 'markers',
+        x = ~DC1, 
+        y = ~-DC2,
+        z = ~-DC3,
+        marker = list(opacity = 0.7, size=2),
+        color = s3to4.md$ann[points]) 
+```

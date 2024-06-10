@@ -58,7 +58,7 @@ s3 <- read_rds("data/rds/Stage3.rds")
 
 ## SCTransform and Dim reduction
 
-```{r}
+```{r, eval=FALSE}
 s3 <- NormalizeData(s3) %>% 
   ScaleData() %>% 
   CellCycleScoring(s.features = cc.genes.updated.2019$s.genes, g2m.features = cc.genes.updated.2019$g2m.genes)
@@ -82,54 +82,45 @@ map2(c(3,4,5), cc, ~DimPlot(s3, cells.highlight = list(rownames(s3@meta.data %>%
        NoAxes() & theme(text = element_text(size = 25), legend.position = "none"))  %>%  wrap_plots(ncol = 3)
 ```
 
-```{r}
-png(res = 600, filename = "data/figures/Stage3_UMAP_CHIR.png",units = "mm", width = 400, height = 150) 
 
+```{r, fig.width=4, fig.height=13.5}
 map2(c(3,4,5), cc, ~DimPlot(s3, cells.highlight = list(rownames(s3@meta.data %>% filter(chir==paste0(.x, "c")))), 
                             cols.highlight = .y, sizes.highlight = 0.2) + ggtitle(paste0(.x, "c")) +
-       NoAxes() & theme(text = element_text(size = 25), legend.position = "none"))  %>%  wrap_plots(ncol = 3)
-dev.off()
+       NoAxes() & theme(text = element_text(size = 25), legend.position = "none"))  %>%  wrap_plots(ncol = 1)
 ```
-
-
 
 ## Run DKCC
 
+
 ```{r}
+library(DevKidCC)
+```
+
+
+```{r, eval=FALSE}
 s3.dkcc <- DKCC(s3)@meta.data
 
 ```
 
 
-split by classification
 
-```{r}
-table(s3.dkcc$DKCC, s3.dkcc$condition)
-table(s3.dkcc$LineageID, s3.dkcc$condition)
-```
 
 There is very little segmented nephrons, instead enriched for early nephron. There were a large number of unassigned and NPC-like cells.
 
-```{r}
+```{r, eval=FALSE}
 s3$DKCC <- s3.dkcc$DKCC
 s3$LineageID <- s3.dkcc$LineageID
 ```
 
 
-```{r, fig.width=24, fig.height=12}
+```{r, fig.width=6, fig.height=6}
 map(c("NPC", "Nephron", "Stroma", "NPC-like", "unassigned"), ~DimPlot(s3, cells.highlight = list(rownames(s3@meta.data %>% filter(LineageID==.x))), 
-                                                                              cols.highlight = ifelse(.x!="unassigned", myColours()[.x], "black"), sizes.highlight = 0.2) + ggtitle(.x) +
-  NoAxes() & theme(text = element_text(size = 25), legend.position = "none"))  %>%  wrap_plots(ncol = 3)
+                                                                              cols.highlight = ifelse(.x!="unassigned", DevKidCC::myColours()[.x], "black"), sizes.highlight = 0.2) + ggtitle(.x) +
+  NoAxes() & theme(text = element_text(size = 25),
+                   legend.position = "none",
+                   title = element_text(hjust = 1)))
 ```
 
-
-```{r}
-png(res = 600, filename = "data/figures/Stage3_UMAP_LineageID.png",units = "mm", width = 400, height = 300) 
-map(c("NPC", "Nephron", "Stroma", "NPC-like", "unassigned"), ~DimPlot(s3, cells.highlight = list(rownames(s3@meta.data %>% filter(LineageID==.x))), 
-                                                                              cols.highlight = ifelse(.x!="unassigned", myColours()[.x], "black"), sizes.highlight = 0.2) + ggtitle(.x) +
-  NoAxes() & theme(text = element_text(size = 25), legend.position = "none"))  %>%  wrap_plots(ncol = 3)
-dev.off()
-```
 
 
 ```{r, fig.width=3, fig.height=4}
@@ -144,18 +135,12 @@ DimPlot(s3, group.by = "gf", split.by = "LineageID", ncol = 5)
 We see the same pattern as in the stage 4 - nephrons grouped away from the main nephron body, adjacent to NPC-like and unassigned cells.
 
 
-```{r}
+```{r, fig.width=3, fig.height=5}
 ComponentPlot(s3[, s3$LineageID == "Nephron"], identity = "chir", show.pct = T, component = "DKCC", do.label = F)
 ```
 
 
-```{r}
-png(res = 300, filename = "data/figures/Stage3_CompPlot_CHIR_LinID.png",units = "mm", width = 100, height = 150) 
-ComponentPlot(s3, identity = "chir", show.pct = T, component = "LineageID", do.label = F) & theme(text = element_text(size = 20))
-png(res = 300, filename = "data/figures/Stage3_CompPlot_CHIR_NephronDKCC.png",units = "mm", width = 85, height = 150)
-ComponentPlot(s3[, s3$LineageID == "Nephron"], identity = "chir", show.pct = T, component = "DKCC", do.label = F) & theme(text = element_text(size = 20))
-dev.off()
-```
+
 
 
 ## Cluster populations
@@ -165,22 +150,32 @@ s3 <- s3 %>% FindNeighbors() %>% FindClusters(random.seed = 250395, resolution =
 ```
 
 ```{r, fig.height=9, fig.width=9}
-MultiDimPlot(s3, cluster.sequence = c(0.1, 0.2, 0.3, 0.5))
+MultiDimPlot(s3, cluster.sequence = c(0.1, 0.2, 0.3, 0.5, 0.7, 0.9))
 ```
 
 
 ```{r}
-ComponentPlot(s3, identity = "SCT_snn_res.0.2", component = "LineageID", show.pct = T)
+DevKidCC::ComponentPlot(s3, identity = "SCT_snn_res.0.2", component = "LineageID", show.pct = T)
+DevKidCC::ComponentPlot(s3, identity = "SCT_snn_res.0.5", component = "LineageID", show.pct = T)
+DevKidCC::ComponentPlot(s3, identity = "SCT_snn_res.0.9", component = "LineageID", show.pct = T)
 ```
 
 A resolution of 0.2 leads to a pretty accurate breakdown of clusters compared to the LineageID classification.
 
-```{r}
-png(res = 600, filename = "data/figures/Stage3_res02_UMAP.png",units = "mm", width = 200, height = 150) 
-DimPlot(s3, group.by = "SCT_snn_res.0.2", label=T, label.size = 8) + NoAxes() & theme(text = element_text(size = 20), legend.position = "none")
-png(res = 600, filename = "data/figures/Stage3_CompPlot_res02_LinID.png",units = "mm", width = 150, height = 150) 
-ComponentPlot(s3, identity = "SCT_snn_res.0.2", component = "LineageID", show.pct = T, do.label = F) & theme(text = element_text(size = 20))
-dev.off()
+A resolution of 0.5 leads to a similarly accurate breakdown but with more clusters per lineage id.
+it also breaks down the larger off-target clusters
+
+```{r, fig.width=6, fig.height=4}
+DimPlot(s3, group.by = "SCT_snn_res.0.5", label=T, label.size = 8) + NoAxes() & theme(text = element_text(size = 20),
+                                                                                      title = element_text(size=0),
+                                                                                      legend.position = "none")
+```
+
+
+```{r, fig.width=5, fig.height=4}
+ComponentPlot(s3, identity = "SCT_snn_res.0.5", component = "LineageID", show.pct = T, do.label = F) & 
+  theme(text = element_text(size = 20),
+        title = element_text(size=0),)
 ```
 
 
@@ -190,11 +185,11 @@ There are two sets of DEG tests we can do: Between all the classified clusters, 
 1. DEGs between all the clusters.
 
 ```{r}
-s3.markers.res02 <- FindAllMarkers(SetIdent(s3, value = "SCT_snn_res.0.2"), only.pos = T, test.use = "t") %>% mutate(diff = pct.1-pct.2)
+s3.markers.res05 <- FindAllMarkers(SetIdent(s3, value = "SCT_snn_res.0.5"), only.pos = T, test.use = "t") %>% mutate(diff = pct.1-pct.2)
 ```
 
 ```{r, fig.width=24}
-StrDotPlot(s3, group.by = "SCT_snn_res.0.2", features = unique((s3.markers.res02 %>% dplyr::group_by(cluster) %>% top_n(10, diff))$gene))
+StrDotPlot(s3, group.by = "SCT_snn_res.0.5", features = unique((s3.markers.res05 %>% dplyr::group_by(cluster) %>% top_n(10, diff))$gene))
 ```
 
 
@@ -203,126 +198,245 @@ Clusters 0 and 2 are similar, with 0 having few enriched DEGs while 2 shares man
 If the populations are grouped by lineage AND cluster, does this inmprove our understanding of these cell types?
 
 ```{r, fig.width=24, fig.height=12}
-s3$Res0.2_LinID <- paste0(s3$SCT_snn_res.0.2, "_", s3$LineageID)
-StrDotPlot(s3, group.by = "Res0.2_LinID", features = unique((s3.markers.res02 %>% dplyr::group_by(cluster) %>% top_n(10, diff))$gene))
-
+s3$Res0.5_LinID <- paste0(s3$SCT_snn_res.0.5, "_", s3$LineageID)
+StrDotPlot(s3, group.by = "Res0.5_LinID", features = unique((s3.markers.res05 %>% dplyr::group_by(cluster) %>% top_n(5, diff))$gene))
 ```
 
-```{r}
-png(res = 600, filename = "data/figures/Stage3_res02LinID_StrDotPlot.png",units = "mm", width = 400, height = 175)
-StrDotPlot(s3, group.by = "Res0.2_LinID", dot.scale = 4, features = unique((s3.markers.res02 %>% dplyr::group_by(cluster) %>% top_n(10, diff))$gene))
-dev.off()
-```
-
-
-Differences:
-Cluster 0 stroma enriched for COL3A1 and PDGFRA, others are not.
-Cluster 0 NPC and Nephron enriched for NPC and Nephron cluster genes while absent in other pops. NPC-like do not express these genes.
-Cluster 1 unassigned and NPC-like cells almost exact same as NPC (and Nephron which also has advanced PAX2/LHX1/EMX2/POU3F3)
-Cluster 2 unassigned and NPC-like near identical to Stroma
 
 2. DEGs between the LineageID within each cluster
 
 ```{r}
-s3.markers.res02.linid <- map(0:6, ~FindAllMarkers(SetIdent(s3[, s3$SCT_snn_res.0.2==.x], value = "LineageID"), only.pos = T, test.use = "t") %>% mutate(diff = pct.1-pct.2))
+s3.markers.res05.linid <- map(0:11, ~FindAllMarkers(SetIdent(s3[, s3$SCT_snn_res.0.5==.x], value = "LineageID"), only.pos = T, test.use = "t") %>% mutate(diff = pct.1-pct.2))
 
 ```
 
 
 ```{r, fig.width=24, fig.height=6}
-map(0:6, ~StrDotPlot(s3[, s3$SCT_snn_res.0.2==.x], 
-                     group.by = "LineageID", features = unique((s3.markers.res02.linid[[.x+1]] %>% dplyr::group_by(cluster) %>% top_n(10, diff))$gene))
+map(0:6, ~StrDotPlot(s3[, s3$SCT_snn_res.0.5==.x], 
+                     group.by = "LineageID", features = unique((s3.markers.res05.linid[[.x+1]] %>% dplyr::group_by(cluster) %>% top_n(10, diff))$gene))
 )
 
 ```
 
 ```{r}
-s3.markers.res02.un.vs.npclike <- map(c(0,2,3,5,6), ~FindMarkers(SetIdent(s3[, s3$SCT_snn_res.0.2==.x], value = "LineageID"), ident.1 = "NPC-like",
-                                                        ident.2. = "unassigned", test.use = "t") %>% mutate(diff = pct.1-pct.2))
-
+#s3.markers.res05.un.vs.npclike <- map(c(0,2,3,5,6), ~FindMarkers(SetIdent(s3[, s3$SCT_snn_res.0.5==.x], value = "LineageID"), ident.1 = "NPC-like",
+#                                                        ident.2. = "unassigned", test.use = "t") %>% mutate(diff = pct.1-pct.2))
+#
 ```
 
 ```{r}
-map(s3.markers.res02.un.vs.npclike, ~nrow(.x %>% filter(abs(diff) > 0.05)))
-s3.markers.res02.un.vs.npclike[[1]]
+#map(s3.markers.res05.un.vs.npclike, ~nrow(.x %>% filter(abs(diff) > 0.05)))
+#s3.markers.res05.un.vs.npclike[[1]]
 ```
 
 
 
-## Clusters 3 and 5
+## Clusters 5, 8, 11
 
-These are the two populations that are off to the wings of the main cluster.
+These are the two populations that are off to the wings of the main cluster. one is clearly neural. the other is not.
 
 ```{r, fig.width=24}
-StrDotPlot(s3, group.by = "SCT_snn_res.0.2", features = unique((s3.markers.res02 %>% filter(cluster %in% c(3,5), diff > 0.3))$gene))
+StrDotPlot(s3, group.by = "SCT_snn_res.0.5", features = unique((s3.markers.res05 %>% filter(cluster %in% c(5,8,11), diff > 0.3))$gene))
 ```
 
+```{r, fig.width=6, fig.height=4}
+DimPlot(s3, group.by = "SCT_snn_res.0.5", label = T) & NoAxes()
+```
+
+
+Work out the difference between the 5, 8 and 11 clusters
+
+```{r, fig.height=3.5, fig.width=6}
+StrDotPlot(s3[, s3$SCT_snn_res.0.5 %in% c("5", "8", "11")], group.by = "SCT_snn_res.0.5", dot.min = 0.05,
+           features = c("MYL1", "PAX8", "ZIC2", "ZIC4", "PRRX1", "DCX", "SEMA3A", "EPHA3", "EPHA4", "ZIC1", "PAX3", "MEOX2", "TCF15",
+                        "SOX2", "MYOG", "LHX1", "NKX2-5", "PMEL"
+                       ))
+```
+
+```{r, fig.height=3.5, fig.width=8}
+StrDotPlot(s3[, s3$SCT_snn_res.0.5 %in% c("0", "9", "4", "5","7", "8", "11")], group.by = "SCT_snn_res.0.5", dot.min = 0.05,
+           features = c("MYL1", "PAX8", "ZIC2", "ZIC4", "PRRX1", "DCX", "SEMA3A", "EPHA3", "EPHA4", "ZIC1", "PAX3", "MEOX2", "TCF15",
+                        "COL3A1", "PDGFRA", "PDGFRB", "CXCL12", "PCDH9", "TNC", "TAGLN",
+                        "SOX2", "MYOG", "LHX1", "NKX2-5", "PMEL"
+                       ))
+```
+
+```{r, fig.height=4, fig.width=12}
+StrDotPlot(s3, group.by = "SCT_snn_res.0.5", dot.min = 0.05, dot.scale = 8,
+           features = c("PAX8", "PAX2", "CITED1", "LHX1", # nephron/nephrogeic
+                        "MYL1", "PRRX1", "DCX", "MYOG", "NKX2-5",  # muscle
+                        "MEOX2", "TCF15","PAX3", # PM
+                        "SOX2", "ZIC1", "ZIC2", "ZIC4", "SEMA3A", "EPHA3", "EPHA4", "PMEL", # neural/nc
+                        "COL3A1", "PDGFRA", "PDGFRB", "CXCL12", "PCDH9", "TNC", "TAGLN"
+                        
+                       ))
+```
 
 ```{r}
-png(res = 600, filename = "data/figures/Stage3_res02_offtarget_StrDotPlot.png",units = "mm", width = 500, height = 100)
-StrDotPlot(s3, group.by = "SCT_snn_res.0.2", features = unique((s3.markers.res02 %>% filter(cluster %in% c(3,5), diff > 0.3))$gene))
-dev.off()
+#s3.pb <- pseudobulk(s3, "stage.cluster")
 ```
 
-```{r, fig.height=12, fig.width=16}
-FeaturePlot(s3, features = c("PAX3", "TCF15", "ZIC1", "FOXC1", "MEOX1", "SOX2", "FOXC2", "MEOX2", "CRABP1"), order = T, ncol=3)
+
+```{r, fig.width=6, fig.height=5}
+s3.markers.res05$cluster <- paste0("Stage3_c", s3.markers.res05$cluster)
+genes <- as.matrix(table(s3.markers.res05$cluster, s3.markers.res05$gene))
+pearson <- cor(t(genes))
+NMF::aheatmap(pearson, border_color = "black", treeheight = c(30, 0))
+
+```
+
+```{r, fig.height=6, fig.width=14}
+FeaturePlot(s3, order = T, cols = vcol,
+            features = c("PAX2", "PAX8", "PRRX1", "TCF15", "MEOX2", "PAX3", "SOX2", "ZIC1", "COL3A1", "PDGFRA"), ncol = 5) & NoAxes() & NoLegend()
+```
+
+```{r, fig.height=6, fig.width=9}
+FeaturePlot(s3, order = T, cols = vcol,
+            features = c("PAX2", "PAX8", "CITED1",
+                         "PDGFRA", "ZIC1", "PRRX1"), ncol = 3) & NoAxes() & NoLegend()
+```
+
+
+```{r, fig.height=4, fig.width=14}
+#StrDotPlot(s3[, s3$SCT_snn_res.0.5 %in% c("0", "9", "4", "5","7", "8", "11")], group.by = "SCT_snn_res.0.5", dot.min = 0.05,
+#           features = unique((s3.markers.res05 %>% filter(cluster %in% c("0", "9", "4", "5","7", "8", "11")) %>% dplyr::group_by(cluster) %>% top_n(10, pct.1-pct.2))$gene)
+#             )
+```
+write the markers to csv format
+
+```{r}
+write_csv(s3.markers.res05, "data/tables/Stage3_res05_markers.csv")
+```
+
+## Nephron subset
+
+subset the nephron lineage clusters and reevaluate
+
+```{r}
+s3.neph <- s3[, s3$SCT_snn_res.0.5 %in% c(1, 2, 3, 6)]
+s3.neph <- SCTransform(s3.neph, vars.to.regress = c("S.Score", "G2M.Score"), seed.use = 250395)
+s3.neph <- s3.neph %>% 
+  RunPCA(npcs = 20, seed.use = 250395) %>% 
+  RunUMAP(dims = 1:5, seed.use = 250395)
+```
+
+show the umap with the devkidcc and cluster identities
+
+```{r}
+DimPlot(s3.neph, group.by = "SCT_snn_res.0.5")
+DimPlot(s3.neph, group.by = "SCT_snn_res.0.5", split.by = "ann", ncol = 2)
+```
+
+Repeat for the unassigned cells
+
+subset the non-nephron lineage clusters and reevaluate
+
+```{r}
+s3.nn <- s3[, s3$SCT_snn_res.0.5 %!in% c(1, 2, 3, 6)]
+s3.nn <- SCTransform(s3.nn, vars.to.regress = c("S.Score", "G2M.Score"), seed.use = 250395)
+s3.nn <- s3.nn %>% 
+  RunPCA(npcs = 20, seed.use = 250395) %>% 
+  RunUMAP(dims = 1:5, seed.use = 250395)
+```
+
+show the umap with the devkidcc and cluster identities
+
+```{r}
+DimPlot(s3.nn, group.by = "SCT_snn_res.0.5")
+DimPlot(s3.nn, group.by = "SCT_snn_res.0.5", split.by = "ann", ncol = 3)
 ```
 
 ```{r}
-png(res = 600, filename = "data/figures/Stage3_res02_mesoderms_StrDotPlot.png",units = "mm", width = 150, height = 100)
-StrDotPlot(s3, group.by = "SCT_snn_res.0.2", features = c("PAX3", "TCF15", "ZIC1", "FOXC1", "MEOX1", "SOX2", "FOXC2", "MEOX2", "CRABP1",
-                                                          "SIX1", "SIX2", "CITED1", "PAX2", "PAX8", "ITGA8", "DAPL1", "LYPD1", "GDNF")) &
-  theme(text = element_text(size = 20))
-dev.off()
+s3.nn <- FindNeighbors(s3.nn, dims = 1:5) %>% 
+  FindClusters(resolution = c(0.2, 0.4, 0.6))
 ```
+
+```{r}
+DimPlot(s3.nn, group.by = "SCT_snn_res.0.4")
+DimPlot(s3.nn, group.by = "SCT_snn_res.0.4", split.by = "ann", ncol = 3)
+```
+
+```{r}
+FeaturePlot(s3.nn, order = T, 
+            features = c("PAX8", "PRRX1", "ZIC2", "SOX2", "ZIC1", "COL3A1", "COL9A1", "TCF15", "PAX3"), ncol = 3) & NoAxes()
+```
+
+
 
 ## Update annotation
 Bit complex this one.
 
-So:
-All nephron and NPC in clusters 1 and 4 remain as is.
-Stroma in clusters 0 and 2 remains as is.
-Cluster 3 becomes Dermomyotome-like
-Cluster 5 become NMP-like
-unassigned and NPC-like in cluster 0 becomes Uncommitted_IM
-unassigned and NPC-like in cluster 2 becomes Uncommitted_IM
-Unassigned and NPC-like in clusters 1 and 4 becomes Metanephric
-Cluster 6 becomes CellCycle-related
+
 
 
 ```{r}
 df.rownames <- s3@meta.data %>% rownames_to_column() %>% dplyr::select(rowname)
-df.list <- map(0:6, ~s3@meta.data %>% rownames_to_column() %>% filter(SCT_snn_res.0.2 == .x))
+df.list <- map(0:11, ~s3@meta.data %>% rownames_to_column() %>% filter(SCT_snn_res.0.5 == .x))
 df.list[[1]] <- df.list[[1]] %>% 
-  mutate(ann = case_when(LineageID == "Nephron" ~ "Nephron",
-                         LineageID == "NPC" ~ "NPC",
+  mutate(ann = case_when(LineageID == "Nephron" ~ "Mesenchyme_1",
+                         LineageID == "NPC" ~ "Mesenchyme_1",
                          LineageID == "Stroma" ~ "Stroma",
-                         LineageID == "unassigned" ~ "Uncommitted_IM",
-                         LineageID == "NPC-like" ~ "Uncommitted_IM"))
+                         LineageID == "unassigned" ~ "Mesenchyme_1",
+                         LineageID == "NPC-like" ~ "Mesenchyme_1"))
 df.list[[2]] <- df.list[[2]] %>% 
   mutate(ann = case_when(LineageID == "Nephron" ~ "Nephron",
                          LineageID == "NPC" ~ "NPC",
                          LineageID == "Stroma" ~ "Stroma",
-                         LineageID == "unassigned" ~ "Metanephric",
-                         LineageID == "NPC-like" ~ "Metanephric"))
+                         LineageID == "unassigned" ~ "Nephrogenic",
+                         LineageID == "NPC-like" ~ "Nephrogenic"))
 df.list[[3]] <- df.list[[3]] %>% 
-  mutate(ann = case_when(LineageID == "Nephron" ~ "Uncommitted_IM",
-                         LineageID == "NPC" ~ "Uncommitted_IM",
+  mutate(ann = case_when(LineageID == "Nephron" ~ "Nephron",
+                         LineageID == "NPC" ~ "NPC",
                          LineageID == "Stroma" ~ "Stroma",
-                         LineageID == "unassigned" ~ "Uncommitted_IM",
-                         LineageID == "NPC-like" ~ "Uncommitted_IM"))
+                         LineageID == "unassigned" ~ "Nephrogenic",
+                         LineageID == "NPC-like" ~ "Nephrogenic"))
 df.list[[4]] <- df.list[[4]] %>% 
-  mutate(ann = "Dermomyotome-like")
+  mutate(ann = case_when(LineageID == "Nephron" ~ "Nephron",
+                         LineageID == "NPC" ~ "NPC",
+                         LineageID == "Stroma" ~ "Stroma",
+                         LineageID == "unassigned" ~ "Nephrogenic",
+                         LineageID == "NPC-like" ~ "Nephrogenic"))
 df.list[[5]] <- df.list[[5]] %>% 
   mutate(ann = case_when(LineageID == "Nephron" ~ "Nephron",
                          LineageID == "NPC" ~ "NPC",
                          LineageID == "Stroma" ~ "Stroma",
-                         LineageID == "unassigned" ~ "Metanephric",
-                         LineageID == "NPC-like" ~ "Metanephric"))
+                         LineageID == "unassigned" ~ "Mesenchyme_2",
+                         LineageID == "NPC-like" ~ "Mesenchyme_2"))
 df.list[[6]] <- df.list[[6]] %>% 
-  mutate(ann = "NMP-like")
+  mutate(ann = case_when(LineageID == "Nephron" ~ "NMP_tNC",
+                         LineageID == "NPC" ~ "NMP_tNC",
+                         LineageID == "Stroma" ~ "Stroma",
+                         LineageID == "unassigned" ~ "NMP_tNC",
+                         LineageID == "NPC-like" ~ "NMP_tNC"))
 df.list[[7]] <- df.list[[7]] %>% 
-  mutate(ann = "CellCycle-related")
+  mutate(ann = case_when(LineageID == "Nephron" ~ "Nephron",
+                         LineageID == "NPC" ~ "NPC",
+                         LineageID == "Stroma" ~ "Stroma",
+                         LineageID == "unassigned" ~ "Nephrogenic",
+                         LineageID == "NPC-like" ~ "Nephrogenic"))
+df.list[[8]] <- df.list[[8]] %>% 
+  mutate(ann = case_when(LineageID == "Nephron" ~ "Neural",
+                         LineageID == "NPC" ~ "Neural",
+                         LineageID == "Stroma" ~ "Neural",
+                         LineageID == "unassigned" ~ "Neural",
+                         LineageID == "NPC-like" ~ "Neural"))
+df.list[[9]] <- df.list[[9]] %>% 
+  mutate(ann = case_when(LineageID == "Nephron" ~ "NMP_NP",
+                         LineageID == "NPC" ~ "NMP_NP",
+                         LineageID == "Stroma" ~ "Stroma",
+                         LineageID == "unassigned" ~ "NMP_NP",
+                         LineageID == "NPC-like" ~ "NMP_NP"))
+df.list[[10]] <- df.list[[10]] %>% 
+  mutate(ann = case_when(LineageID == "Nephron" ~ "Mesenchyme_3",
+                         LineageID == "NPC" ~ "Mesenchyme_3",
+                         LineageID == "Stroma" ~ "Stroma",
+                         LineageID == "unassigned" ~ "Mesenchyme_3",
+                         LineageID == "NPC-like" ~ "Mesenchyme_3"))
+
+df.list[[11]] <- df.list[[11]] %>% 
+  mutate(ann = "Cycling")
+df.list[[12]] <- df.list[[12]] %>% 
+  mutate(ann = "Myotome")
 df.merge <- bind_rows(df.list)
 df.merge$ann %>% table()
 
@@ -330,33 +444,28 @@ ordered.values <- left_join(df.rownames, df.merge, by = "rowname")
 s3$ann <- ordered.values$ann
 ```
 
+```{r, eval=FALSE}
+write_rds(s3, "data/rds/Stage3.rds")
 
-```{r}
-
-new.col <- c(myColours()[c("NPC", "Nephron", "Stroma")], ggplotColors(5))
-names(new.col) <- c("NPC", "Nephron", "Stroma", "Dermomyotome-like", "Metanephric", "Uncommitted_IM", "NMP-like", "CellCycle-related")
-
-DimPlot(s3, group.by = "ann", reduction = "umap", pt.size=0.2, cols = new.col)
 ```
 
-```{r}
-png(res = 600, filename = "data/figures/Stage3_ann_UMAP.png",units = "mm", width = 250, height = 150) 
-DimPlot(s3, group.by = "ann", reduction = "umap", pt.size=0.2, 
-        cols = new.col) + NoAxes() & theme(text = element_text(size = 20))
-dev.off()
+
+
+
+
+```{r, fig.width=9, fig.height=6}
+
+new.col <- c(DevKidCC::myColours()[c("NPC", "Nephron", "Stroma")], ggplotColors(9))
+names(new.col) <- c("NPC", "Nephron", "Stroma", "Nephrogenic", "NMP_tNC", "Mesenchyme_1", "Neural", "NMP_NP", "Mesenchyme_2", "Myotome", "Mesenchyme_3", "Cycling")
+
+DimPlot(s3, group.by = "ann", reduction = "umap", pt.size=0.2, cols = new.col) & NoAxes()
 ```
 
-```{r}
-png(res = 600, filename = "data/figures/Stage3_ann_onoff_UMAP.png",units = "mm", width = 150, height = 150) 
-
-(DimPlot(s3[, s3$ann %in% c("NPC", "Stroma","Nephron")], group.by = "ann", reduction = "umap", pt.size=0.2, cols = new.col) + 
-    NoAxes() & theme(text = element_text(size = 20), title = element_text(size = 0))) +
-(DimPlot(s3[, s3$ann %!in% c("NPC", "Stroma","Nephron")], group.by = "ann", reduction = "umap", pt.size=0.2, cols = new.col) + 
-    NoAxes() & theme(text = element_text(size = 20), title = element_text(size = 0))) +
-  plot_layout(design = "
-              A
-              B")
-dev.off()
+```{r, fig.width=3, fig.height=5}
+ComponentBar(s3, identity = "chir", show.pct = T, component = "ann", show.text = 101) + 
+  scale_fill_discrete(type = new.col) +
+  theme_minimal() +
+  scale_y_continuous(limits = c(0, 100 + 1), expand = c(0,0))
 ```
 
 

@@ -1,0 +1,135 @@
+---
+title: "Kidney_invitro_invivo_comparison"
+date: "`r Sys.Date()`"
+author: "Sean Wilson"
+format:
+  html:
+    theme: pulse
+#output: html
+#  rmdformats::readthedown:
+#  highlight: kate
+#  toc: true
+#output:
+#  prettydoc::html_pretty:
+#    theme: cayman
+#    highlight: github
+#    toc: true
+#knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_dir = here::here("docs/"))})
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(tidyverse)
+library(Seurat)
+library(SeuratDisk)
+library(SeuratObject)
+library(patchwork)
+source(here::here("code/general_r_functions.R"))
+source(here::here("code/project_functions.R"))
+source(here::here("code/circle_plot.R"))
+source(here::here("code/datavis.R"))
+library(plotly)
+library(destiny)
+seed <- 250395
+## Global options
+options(max.print="500")
+opts_knit$set(width=500, root.dir = here::here())
+opts_chunk$set(echo=TRUE,
+	             cache=FALSE,
+               cache.lazy = FALSE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE,
+               fig.width = 9,
+               fig.height = 6)
+options(future.globals.maxSize = Inf)
+```
+
+## Data
+
+```{r}
+s1 <- read_rds("data/rds/Stage1.rds")
+s2 <- read_rds("data/rds/Stage2.rds")
+s3 <- read_rds("data/rds/Stage3.rds")
+s4 <- read_rds("data/rds/Stage4.rds")
+
+```
+
+## Introduction
+
+The experiment generated 20 different versions of the kidney organoid protocol (Takasato et al. 2015, Nature) with single cell data collected at 4 time points. The final time point was "end stage" or "stage 4" samples, 27 day old cultures.
+
+![](images/Protocol.png){width="717"}
+
+## Overview of existing analysis
+
+First, I combined all the time points together into "A transcriptional atlas of kidney organoid differentiation"
+
+![](images/Atlas.png){width="930"}
+
+I then analysed each stage individually, **however** with all conditions at each stage combined.
+
+```{r, fig.width=16, fig.height=12}
+(DimPlot(s1, group.by = "condition") + ggtitle("Stage 1")) +
+  (DimPlot(s2, group.by = "condition") + ggtitle("Stage 2")) +
+  (DimPlot(s3, group.by = "condition") + ggtitle("Stage 3")) +
+  (DimPlot(s4, group.by = "condition") + ggtitle("Stage 4")) +
+    plot_layout(ncol = 2)
+```
+
+These plots showed that some conditions overlapped while some conditions were uniquely localised.
+
+We performed the integration of all the datasets to allow us to build a combined and comprehensive atlas of cell types. We have discussed whether doing this in each condition would have been the better alternative, and can make arguments both for and against. For now we have decided to use the integrated analysis for the atlas and annotation.
+
+In the final organoids, the breakdown of cellular identities as decided through a combination of DEGs, comparison to a human developmental atlas (https://hubmapconsortium.org/hubmap-data/) and DevKidCC.
+
+![](images/D27_umaps.png)
+
+There are a large proportion of off-target cells, but this isn't consistent across all conditions (not in order, note Astrocyte-like cells predominant in many conditions).
+
+```{r}
+ComponentHeatMapDF(s4, identity = "condition", component = "ann") %>% 
+  mutate(Identity = factor(Identity)) %>% 
+  ggplot() +
+  geom_tile(aes(Identity, Component, fill = Pct), colour = "white") +
+  viridis::scale_fill_viridis() + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))
+
+```
+
+## Human fetal kidney
+
+In Howden et al 2020 I produced an atlas of the human fetal kidney.
+
+```{r}
+hfk <- read_rds("data/rds/Reference.rds")
+
+```
+
+```{r}
+DimPlot(hfk, group.by = "KidneySegments", label = T)
+```
+
+## Data curation
+
+convert object into anndata, include umap, pc, annotation, clustering
+
+```{r, include=T, eval=FALSE}
+# method used
+SaveH5Seurat(s4, filename = "~/ucph/ndir/SUN-RENEW-Little/Data/sequencing/wilson_stage4.h5Seurat")
+Convert("~/ucph/ndir/SUN-RENEW-Little/Data/sequencing/wilson_stage4.h5Seurat", dest = "h5ad")
+SaveH5Seurat(hfk, filename = "~/ucph/ndir/SUN-RENEW-Little/Data/sequencing/hfk.h5Seurat")
+Convert("~/ucph/ndir/SUN-RENEW-Little/Data/sequencing/hfk.h5Seurat", dest = "h5ad")
+
+```
+
+
+## Final thoughts
+
+It would be cool to see how accurately the mapping of cell types between organoid and the fetal kidney is using DevKidCC, compared to CAT.
+In the stage 4 object, the metadata column "condition" breaks down each individual sample. "ann" is the annotation given by us (which we are in the final stages of finalising). Other metadata of use are "chir" and "gf" which denote the two different parameters we changed across the conditions. Note, condition "4c4FL" is missing - we did not collect that sample.
+
+
+
+

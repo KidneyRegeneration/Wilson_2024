@@ -1,0 +1,255 @@
+---
+title: "Man2_Figure4_Stage2_mods"
+date: "`r Sys.Date()`"
+author: "Sean Wilson"
+output:
+  rmdformats::readthedown:
+  highlight: kate
+  toc: true
+#output:
+#  prettydoc::html_pretty:
+#    theme: cayman
+#    highlight: github
+#    toc: true
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_dir = here::here("docs/"))})
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(rmdformats)
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(ggrepel)
+source(here::here("code/general_r_functions.R"))
+source(here::here("code/project_functions.R"))
+source(here::here("code/circle_plot.R"))
+source(here::here("code/datavis.R"))
+library(plotly)
+library(edgeR)
+library(limma)
+library(RColorBrewer)
+library(NMF)
+library(Homo.sapiens)
+library(org.Hs.eg.db)
+library(Glimma)
+library(gplots)
+nmf.options(grid.patch=FALSE)
+seed <- 250395
+## Global options
+options(max.print="1000")
+opts_chunk$set(echo=FALSE,
+	             cache=FALSE,
+               cache.lazy = FALSE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE,
+               fig.width = 9,
+               fig.height = 6,
+               dpi = 600,
+               echo=FALSE)
+opts_knit$set(width=500, root.dir = here::here())
+options(future.globals.maxSize = Inf)
+
+```
+
+
+
+## Whole dataset
+
+
+```{r}
+all <- read_rds("data/rds/Wilson_kidney_organoid_atlas.rds")
+all$gf <- gsub("G11", "G", all$gf)
+all$condition <- gsub("G11", "G", all$condition)
+
+s2 <- read_rds("data/rds/Stage2.rds")
+s2$gf <- gsub("G11", "G", s2$gf)
+s2$condition <- gsub("G11", "G", s2$condition)
+```
+
+All gf changes except f200
+
+```{r, fig.width=14, fig.height=9}
+s2$condition <- factor(s2$condition, levels = c(paste0("3c", c("4F", "4F200", "4FA", "4FC", "4FL", "4E")),
+                                                paste0("4c", c("4F", "4F200", "4FA", "4FC", "4FL", "4E")),
+                                                paste0("5c", c("4F", "4F200", "4FA", "4FC", "4FL", "4E")),
+                                                "4c3F", "5c2F"))
+DimPlot(s2, split.by = "condition", ncol = 6, group.by = "ann") + NoAxes()
+```
+
+```{r, fig.width=4.5, fig.height=6}
+DimPlot(s2[, s2$condition %in% c("4c3F", "5c2F")], split.by = "condition", ncol = 1, group.by = "ann") + NoAxes()
+```
+
+
+gene expression across stage 2 cells
+
+```{r, fig.width=9, fig.height=5}
+s2$group.ordered <- factor(s2$condition, 
+                           levels = c(simplify(map(c("4F", "4F200", "4FA", "4FC", "4FL", "4E"), ~paste0(c("3c", "4c", "5c"), .x))), "4c3F", "5c2F"))
+StrDotPlot(s2, group.by = "group.ordered",
+           features = c("SOX2", "FGF8", "SP5", "FGF17", "CXCR4",
+                        "PAX8", "ITGA8", "FOXC2",
+                        "TCF15", "PAX3", "HOXD9", "HOXA10", "HOXC10", "HOXD10", "HOXD11")) + coord_flip()
+
+```
+
+
+```{r}
+df4 <- map(c("3c", "4c", "5c"), ~
+            ComponentHeatMapDF(s2[, s2$chir==.x], identity = "condition", component = "ann") %>% 
+            transmute(Identity = Identity, Component = Component, Pct = Pct, Cells = Cells) %>% 
+            #filter(Identity %in% c(paste0(.x, c("4F", "4F200")))) %>% 
+            #pivot_wider(names_from = c("Identity"), values_from = "Pct") %>% 
+            #`colnames<-`(c("Component", "Control", "Test")) %>% 
+            mutate(CHIR = .x,
+                   GF = str_split(Identity, pattern = "c", simplify = T)[,2]) 
+)
+
+df4 <- bind_rows(df4[[1]], df4[[2]]) %>% bind_rows(df4[[3]])
+```
+
+
+```{r, fig.width=16, fig.height=5}
+df4 %>% 
+  mutate(Component = factor(Component, levels = c("PSM", "PSM-to-IM", "IM_1", "IM_2", "IM_3",
+                                                  "nc_Meso", "PM_1", "PM_2", "NMP", "preNC"
+                                                  ))) %>%
+  ggplot() +
+  #  geom_segment( aes(x=Component, xend=Component, y=ifelse(Control>16, 16, Control), yend=ifelse(Test>16, 16, Test)), color="black") +
+  #geom_point( aes(x=Component, y=Control), color="red", size=3 ) +
+  #geom_point( aes(x=Component, y=Test), color="blue", size=3 ) +
+  geom_col(aes(GF, Cells, fill = CHIR), colour = "black", position = "stack", stat = "identity", width = 0.7) +
+  #scale_y_log10() +
+  #coord_flip()+
+  facet_grid(cols = vars(Component)) +
+  scale_fill_discrete(type = cc) +
+  scale_y_continuous(limits = c(0,3500), expand = c(0, 0)) +
+  #xlab("") +
+  #ylab("Population %") +
+  #ylim(c(0, 3500)) +
+  theme_minimal() +
+  theme(legend.position = "right",
+        axis.text = element_text(size=12),
+        axis.text.x = element_text(angle=45, vjust = 1, hjust = 1)
+        )
+
+```
+
+
+
+
+
+
+
+```{r}
+raw <- map2_dfc(c("099", 100:102, 104:109, 111:116), c(231275:231278, 231280:231285, 231287:231292), ~read.csv(file=paste0("/projects/dan1/people/dcq349/seq/run2/featureCounts/230519_A00692_0358_ML", .y, "_KL", .x, "_MAN-20230517_ILLStrmRNA_L000.counts.txt"), sep="\t", row.names = 1, skip = 1)[,6])
+raw <- raw %>% rownames_to_column()
+genes <- rownames(read.csv(file=paste0("/projects/dan1/people/dcq349/seq/run2/featureCounts/230519_A00692_0358_ML231275_KL099_MAN-20230517_ILLStrmRNA_L000.counts.txt"), sep="\t", row.names = 1, skip = 1)) %>% substr(1,15)
+raw$rowname <- genes
+genes <- table(genes) %>% as.data.frame() %>% arrange(-Freq) %>% filter(Freq==1)
+raw <- raw %>% filter(rowname %in% genes$genes)
+raw <- column_to_rownames(raw)
+colnames(raw) <- paste0(c("099", 100:102, 104:109, 111:116))
+colnames(raw) <- c("3c4F", "4c4F", "5c4F", "3c4FA", "5c4FA", "3c4FC", "4c4FC", "5c4FC", "3c4F200", "4c4F200", "3c4FL", "4c4FL", "5c4FL", 
+                   "3c4E", "4c4E", "5c4E")
+targets <- data.frame(ID = colnames(raw),
+                      CHIR = c("3c", "4c", "5c", "3c", "5c", "3c", "4c", "5c", "3c", "4c", "3c", "4c", "5c", "3c", "4c", "5c"),
+                      GF = c("F", "F", "F", "FA", "FA", "FC", "FC", "FC", "F200", "F200", "FL", "FL", "FL", "E", "E", "E"))
+
+dge <- DGEList(counts=raw, genes=rownames(raw), group=targets$ID)
+colnames(dge) <- paste(targets$ID)
+ann <- AnnotationDbi::select(org.Hs.eg.db, keys=rownames(dge), keytype = "ENSEMBL", 
+              columns=c("ENSEMBL","SYMBOL","GENENAME"))
+ann <- ann[!duplicated(ann$SYMBOL),]
+dge$genes <- ann[match(rownames(dge),ann$ENSEMBL),]$SYMBOL
+dge$genes$LENGTH <- raw$Length[rownames(raw) %in% rownames(dge)]
+```
+
+
+
+```{r}
+s2.sudo <- pseudobulk(s2, "condition")
+colnames(s2.sudo) <- paste0(colnames(s2.sudo), "_FS19")
+
+s2.sudo.genes <- rownames(s2.sudo)
+ann$SYMBOL %in% s2.sudo.genes %>% table()
+
+s2.sudo <- s2.sudo[rownames(s2.sudo) %in% dge$genes,]
+new <- dge$counts[!is.na(dge$genes),] %>% as.data.frame()
+rownames(new) <- dge$genes[!is.na(dge$genes)]
+new <- new[rownames(new) %in% rownames(s2.sudo),]
+
+counts <- bind_cols(new, s2.sudo[rownames(new),] )
+
+dge <- DGEList(counts=counts, genes=rownames(counts))
+```
+
+```{r}
+library(sva)
+
+colnames(dge) <- c(paste0(colnames(raw), "_Exp2"), paste0(colnames(s2.sudo), "_Exp1"))
+colnames(dge) <- gsub("_FS19", "", colnames(dge))
+
+targets <- data.frame(ID = colnames(dge),
+                      CHIR = c("3c", "4c", "5c", "3c", "5c", "3c", "4c", "5c", "3c", "4c", "3c", "4c", "5c", "3c", "4c", "5c",
+                               "3c", "3c", "4c", "3c", "3c", "3c", "3c", "5c", "4c", "4c", "4c", "4c", "4c", "4c", 
+                               "5c", "5c", "5c", "5c", "5c", "5c"),
+                      GF = c("F", "F", "F", "FA", "FA", "FC", "FC", "FC", "F200", "F200", "FL", "FL", "FL", "E", "E", "E",
+                             "FA", "E", "F", "F200", "FL", "F", "FC", "F", "E", "F200", "FL", "FA", "FC", "F", "E", "FC", "FA", "FL", "F200", "F"),
+                      EXP = c(rep("Exp2", 16), rep("Exp1", 20)))
+
+
+# Get log2 counts per million
+logcounts <- cpm(dge,log=TRUE)
+
+# We estimate the variance for each row in the logcounts matrix
+var_genes_exp1 <- apply(logcounts[,17:36], 1, var)
+var_genes_exp2 <- apply(logcounts[,1:16], 1, var)
+
+# Get the gene names for the top 500 most variable genes
+select_var_1 <- names(sort(var_genes_exp1, decreasing=TRUE))[1:2000]
+select_var_2 <- names(sort(var_genes_exp2, decreasing=TRUE))[1:2000]
+
+table(select_var_1 %in% select_var_2)
+
+vargenes <- intersect(select_var_1, select_var_2)
+
+corrected_data = ComBat_seq(counts = as.matrix(dge$counts), batch = targets$EXP)
+```
+
+
+```{r}
+pal.chir = cc  
+pal.gf = c("black", "blueviolet", "skyblue", "grey", "forestgreen", "pink")
+pal.exp = c("magenta", "orange")
+```
+
+```{r}
+ann.col <- list(GF = pal.gf,
+                CHIR =pal.chir,
+                EXP = pal.exp)
+ann.list <- list(GF = (factor(targets$GF)),
+                           CHIR = (factor(targets$CHIR)),
+                           EXP = (factor(targets$EXP)))
+
+```
+
+
+```{r, fig.width=9, fig.height=8}
+pearson <- cor(corrected_data[vargenes,])
+NMF::aheatmap(pearson, border_color = "black", treeheight = c(0, 50),
+              annCol = ann.list[1:2], annColors = ann.col, fontsize = 12, 
+              annRow = ann.list[3])
+```
+
+
+```{r, fig.width = 6, fig.height=6}
+StrDotPlot(s2, group.by = "ann",
+           features = c("TGFBR1", "ACVR1B", "ACVR1C", "ACVR2A", "ACVR2B"), dot.scale = 10)
+```
+
+

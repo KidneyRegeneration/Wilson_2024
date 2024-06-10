@@ -1,0 +1,431 @@
+---
+title: "Man2_Figure3"
+date: "`r Sys.Date()`"
+author: "Sean Wilson"
+output:
+  rmdformats::readthedown:
+  highlight: kate
+  toc: true
+#output:
+#  prettydoc::html_pretty:
+#    theme: cayman
+#    highlight: github
+#    toc: true
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_dir = here::here("docs/"))})
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(rmdformats)
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(ggrepel)
+source(here::here("code/general_r_functions.R"))
+source(here::here("code/project_functions.R"))
+source(here::here("code/circle_plot.R"))
+source(here::here("code/datavis.R"))
+library(plotly)
+seed <- 250395
+## Global options
+options(max.print="1000")
+opts_chunk$set(echo=FALSE,
+	             cache=FALSE,
+               cache.lazy = FALSE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE,
+               fig.width = 9,
+               fig.height = 6,
+               dpi = 600,
+               echo=FALSE)
+opts_knit$set(width=500, root.dir = here::here())
+options(future.globals.maxSize = Inf)
+
+```
+
+
+
+## Whole dataset
+
+
+```{r}
+all <- read_rds("data/rds/Wilson_kidney_organoid_atlas.rds")
+s4 <- read_rds("data/rds/Stage4.rds")
+all$gf <- gsub("G11", "G", all$gf)
+all$condition <- gsub("G11", "G", all$condition)
+
+s4$gf <- gsub("G11", "G", s4$gf)
+s4$condition <- gsub("G11", "G", s4$condition)
+```
+
+
+```{r}
+standard <- all[, all$condition %in% c("3c", "4c", "5c", "3c4F200", "4c4F200", "5c4F200")]
+control <- all[, all$condition %in% c("3c", "4c", "5c", "3c4F", "4c4F", "5c4F")]
+```
+
+```{r}
+new.col <- c(DevKidCC::myColours()[c(unique(s4$DKCC))], ggplotColors(8))
+names(new.col) <- c(names(new.col)[1:20], 
+                    "Astrocyte-like", "Glia-like", "Metanephric", "Stalled_NP_MM", "Neural-like",
+                    "Satellite-cells", "PRRX1/2-PreMuscle", "Myocyte-like")
+pop.types <- list(nephron = c("NPC", "EN", "PEC", "EPod", "Pod", "EPT", "PT", "EDT", "LOH", "DT", "UOS", "UTip", "UIS", "Metanephric"),
+                  stroma = c("SPC", "MS", "CS", "MesS"),
+                  offtarget = c("Myocyte-like", "Satellite-cells", "PRRX1/2-PreMuscle", "Astrocyte-like", "Glia-like", "Neural-like", "Stalled_NP_MM"))
+s123ann <- unique((all@meta.data %>% filter(stage != "Stage4"))$ann)
+s123.cols <- c(ggplotColors(6), ggplotColors(10), ggplotColors(12))
+names(s123.cols) <- s123ann
+s123.cols
+```
+
+
+What cells are left 
+
+```{r, fig.width=9, fig.height=9}
+DimPlot(standard, group.by = "ann", cols = c(new.col, s123.cols), raster = F) + ggtitle("FGF9 at 200ng/ml") + theme(legend.position = "bottom")
+DimPlot(control, group.by = "ann", cols = c(new.col, s123.cols), raster = F) + ggtitle("FGF9 at 100ng/ml") + theme(legend.position = "bottom")
+
+```
+
+```{r, fig.width=8, fig.height=6}
+DimPlot(standard, group.by = "chir", cols = cc) + ggtitle("FGF9 at 200ng/ml") + theme(legend.position = "bottom") + NoAxes()
+DimPlot(control, group.by = "chir", cols = cc) + ggtitle("FGF9 at 100ng/ml") + theme(legend.position = "bottom") + NoAxes()
+``` 
+
+
+```{r, fig.width=20, fig.height=20}
+CoruscantPlot(standard[, standard$stage != "Stage1"], column = "ann", group = "stage", segment = "chir", show.pct = T, text.size = 6, lab.dist = 6) 
+CoruscantPlot(control[, control$stage != "Stage1"], column = "ann", group = "stage", segment = "chir", show.pct = T, text.size = 6, lab.dist = 6)
+EmpirePlot(standard[, standard$stage != "Stage1"], column = "ann", group = "stage", segment = "chir", show.pct = T, text.size = 6, lab.dist = 25) 
+EmpirePlot(control[, control$stage != "Stage1"], column = "ann", group = "stage", segment = "chir", show.pct = T, text.size = 6, lab.dist = 25)
+```
+
+
+
+
+```{r, fig.height=4, fig.width=5}
+map(c("3c", "4c", "5c"), ~
+ComponentHeatMapDF(all[, all$chir %in% .x & all$stage=="Stage4"], identity = "condition", component = "ann") %>% 
+  transmute(Identity = Identity, Component = Component, Pct = Pct) %>% 
+  filter(Identity %in% c(paste0(.x, c("4F", "4F200")))) %>% 
+  pivot_wider(names_from = c("Identity"), values_from = "Pct") %>% 
+  `colnames<-`(c("Component", "Control", "Test")) %>% 
+  ggplot() +
+  geom_segment( aes(x=Component, xend=Component, y=ifelse(Control>10, 10, Control), yend=ifelse(Test>10, 10, Test)), color="black") +
+  geom_point( aes(x=Component, y=Control), color="red", size=3 ) +
+  geom_point( aes(x=Component, y=Test), color="blue", size=3 ) +
+  #scale_y_log10() +
+  coord_flip()+
+  theme(
+    legend.position = "bottom",
+  ) +
+  xlab("") +
+  ylab("Population %") +
+  ylim(c(0,10))
+)
+
+```
+
+```{r,fig.height=4, fig.width=4}
+map(c("3c", "4c", "5c"), ~
+ComponentHeatMapDF(all[, all$chir %in% .x & all$stage=="Stage4"], identity = "condition", component = "ann") %>% 
+  transmute(Identity = Identity, Component = Component, Pct = Pct) %>% 
+  filter(Identity %in% c(paste0(.x, c("4F", "4F200")))) %>% 
+  pivot_wider(names_from = c("Identity"), values_from = "Pct") %>% 
+  `colnames<-`(c("Component", "Control", "Test")) %>% 
+  ggplot() +
+  geom_segment( aes(x=Component, xend=Component, y=ifelse(Control<10, 10, Control), yend=ifelse(Test<10, 10, Test)), color="black") +
+  geom_point( aes(x=Component, y=Control), color="red", size=3 ) +
+  geom_point( aes(x=Component, y=Test), color="blue", size=3 ) +
+  #scale_y_log10() +
+  coord_flip()+
+  theme(
+    legend.position = "bottom",
+  ) +
+  xlab("") +
+  ylab("Population %") +
+  ylim(c(10, 100))
+)
+```
+
+```{r}
+df <- map(c("3c", "4c", "5c"), ~
+            ComponentHeatMapDF(all[, all$chir %in% .x & all$stage=="Stage4"], identity = "condition", component = "ann") %>% 
+            transmute(Identity = Identity, Component = Component, Pct = Pct) %>% 
+            filter(Identity %in% c(paste0(.x, c("4F", "4F200")))) %>% 
+            pivot_wider(names_from = c("Identity"), values_from = "Pct") %>% 
+            `colnames<-`(c("Component", "Control", "Test")) %>% 
+            mutate(Difference = Test-Control,
+                   CHIR = .x) 
+)
+
+df <- bind_rows(df[[1]], df[[2]]) %>% bind_rows(df[[3]])
+```
+
+
+```{r, fig.width=6, fig.height=7}
+df %>% 
+  mutate(Component = factor(Component, levels = c("NPC", "Metanephric", "EN", "EDT", "EPT", "LOH", "DT", "PT", "PEC", "EPod", "Pod", 
+                                                  "SPC", "CS", "MS", "MesS",
+                                                  "Stalled_NP_MM", "PRRX1/2-PreMuscle", "Satellite-cells", "Myocyte-like",
+                                                  "Neural-like", "Glia-like", "Astrocyte-like",
+                                                  "UTip", "UIS", "UOS", "Endo"
+                                                  ))) %>% 
+  ggplot() +
+  #  geom_segment( aes(x=Component, xend=Component, y=ifelse(Control>16, 16, Control), yend=ifelse(Test>16, 16, Test)), color="black") +
+  #geom_point( aes(x=Component, y=Control), color="red", size=3 ) +
+  #geom_point( aes(x=Component, y=Test), color="blue", size=3 ) +
+  geom_col(aes(Difference, Component, fill = CHIR), colour = "black", position = "dodge", stat = "identity", width = 0.7) +
+  #scale_y_log10() +
+  #coord_flip()+
+  
+  scale_fill_discrete(type = cc) +
+  #xlab("") +
+  #ylab("Population %") +
+  xlim(c(-70, 70)) +
+  theme_light() +
+  theme(legend.position = "bottom",
+        axis.text = element_text(size=10)
+  ) 
+
+```
+
+
+4F (Red) has higher Satellite, myocyte, Neural (?), Pods, PECs, MS, EPT
+4F200 (Blue) has higher PreMuscle, NPC, MesS, EPod, EN, CS and Astro-like
+Neutral are UOS, UIS, Stalled NP/MM, PT, Metaneprhic, LOH, Glia, EDT, DT
+
+4F is more proximal (Pods, EPT, PEC) but higher muscle, while 4F200 has more immature nephrons (NPC, EN), premuscle and neural offtargets but higher CS.
+
+```{r}
+df2 <- map(c("3c", "4c", "5c"), ~
+            ComponentHeatMapDF(all[, all$chir %in% .x & all$stage=="Stage3"], identity = "condition", component = "ann") %>% 
+            transmute(Identity = Identity, Component = Component, Pct = Pct) %>% 
+            filter(Identity %in% c(paste0(.x, c("4F", "4F200")))) %>% 
+            pivot_wider(names_from = c("Identity"), values_from = "Pct") %>% 
+            `colnames<-`(c("Component", "Control", "Test")) %>% 
+            mutate(Difference = Test-Control,
+                   CHIR = .x) 
+)
+
+df2 <- bind_rows(df2[[1]], df2[[2]]) %>% bind_rows(df2[[3]])
+```
+
+
+```{r, fig.width=5, fig.height=7}
+df2 %>% 
+  mutate(Component = factor(Component, levels = c("NPC", "Nephrogenic", "Nephron", "Stroma", "Mesenchyme_1",
+                                                  "Mesenchyme_2", "Mesenchyme_3", "Neural", "NMP_tNC", "NMP_NP",
+                                                  "Myotome", "Cycling"
+                                                  ))) %>%
+  ggplot() +
+  #  geom_segment( aes(x=Component, xend=Component, y=ifelse(Control>16, 16, Control), yend=ifelse(Test>16, 16, Test)), color="black") +
+  #geom_point( aes(x=Component, y=Control), color="red", size=3 ) +
+  #geom_point( aes(x=Component, y=Test), color="blue", size=3 ) +
+  geom_col(aes(Difference, Component, fill = CHIR), colour = "black", position = "dodge", stat = "identity", width = 0.7) +
+  #scale_y_log10() +
+  #coord_flip()+
+  
+  scale_fill_discrete(type = cc) +
+  #xlab("") +
+  #ylab("Population %") +
+  xlim(c(-15, 15)) +
+  theme_light() +
+  theme(legend.position = "bottom",
+        axis.text = element_text(size=15)
+  ) 
+
+```
+
+```{r}
+df3 <- map(c("3c", "4c", "5c"), ~
+            ComponentHeatMapDF(all[, all$chir %in% .x & all$stage=="Stage2"], identity = "condition", component = "ann") %>% 
+            transmute(Identity = Identity, Component = Component, Pct = Pct) %>% 
+            filter(Identity %in% c(paste0(.x, c("4F", "4F200")))) %>% 
+            pivot_wider(names_from = c("Identity"), values_from = "Pct") %>% 
+            `colnames<-`(c("Component", "Control", "Test")) %>% 
+            mutate(Difference = Test-Control,
+                   CHIR = .x) 
+)
+
+df3 <- bind_rows(df3[[1]], df3[[2]]) %>% bind_rows(df3[[3]])
+```
+
+
+```{r, fig.width=6, fig.height=7}
+df3 %>% 
+  mutate(Component = factor(Component, levels = c("PSM", "PSM-to-IM", "IM_1", "IM_2", "IM_3",
+                                                  "nc_Meso", "PM_1", "PM_2", "NMP", "preNC"
+                                                  ))) %>%
+  ggplot() +
+  #  geom_segment( aes(x=Component, xend=Component, y=ifelse(Control>16, 16, Control), yend=ifelse(Test>16, 16, Test)), color="black") +
+  #geom_point( aes(x=Component, y=Control), color="red", size=3 ) +
+  #geom_point( aes(x=Component, y=Test), color="blue", size=3 ) +
+  geom_col(aes(Difference, Component, fill = CHIR), colour = "black", position = "dodge", stat = "identity", width = 0.7) +
+  #scale_y_log10() +
+  #coord_flip()+
+  
+  scale_fill_discrete(type = cc) +
+  #xlab("") +
+  #ylab("Population %") +
+  xlim(c(-15, 15)) +
+  theme_light() +
+  theme(legend.position = "bottom",
+        axis.text = element_text(size=15)
+  ) 
+
+```
+
+```{r}
+s2 <- read_rds("data/rds/Stage2.rds")
+```
+
+```{r, fig.width=6, fig.height=9}
+DimPlot(s2[, s2$gf %in% c("4F", "4F200")], split.by = "condition", ncol = 2, group.by = "ann") + NoAxes() + theme(legend.position = "bottom")
+```
+
+```{r}
+s3 <- read_rds("data/rds/Stage3.rds")
+```
+
+
+
+```{r, fig.width=6, fig.height=9}
+DimPlot(s3[, s3$gf %in% c("4F", "4F200")], split.by = "condition", ncol = 2, group.by = "ann") + NoAxes() + theme(legend.position = "bottom")
+```
+
+
+
+
+```{r, fig.width=6, fig.height=9}
+DimPlot(s4[, s4$gf %in% c("4F", "4F200")], split.by = "condition", ncol = 2, group.by = "ann", cols = c(new.col)) + NoAxes() + theme(legend.position = "bottom")
+```
+
+
+```{r, fig.width=9, fig.height=6}
+DimPlot(s4[, s4$gf %in% c("4F", "4F200")], split.by = "condition", ncol = 3, group.by = "ann", cols = c(new.col)) + NoAxes() + theme(legend.position = "bottom")
+```
+
+```{r}
+df <- map(c(1:12, 14:21), ~read_csv(paste0("data/CAT_test_results/Test", .x, "/from_Stage_3_to_Stage_2_absolute_distances.csv")))
+df <- map2(df, 
+           c(paste0("3c", c("4F", "4FG11", "4F200", "4FA", "4FC", "4FL", "4E")),
+             paste0("4c", c("4F", "4FG11", "4F200", "4FA", "4FC", "4E")),
+             paste0("5c", c("4F", "4FG11", "4F200", "4FA", "4FC", "4FL", "4E"))), ~.x %>% mutate(condition = .y))
+
+df <- bind_rows(df[[1]], df[2:20])
+
+head(df)
+
+df$Query <- (df$oc %>% stringr::str_split(pattern = "_Stage", simplify = T))[,1]
+df$Reference <- (df$c_j %>% stringr::str_split(pattern = "_Stage", simplify = T))[,1]
+
+df.theme <- theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+                  #,
+                  panel.background = element_rect(fill = "white"))
+                  #panel.grid = element_blank())
+
+df$CHIR <- paste0((df$condition %>% stringr::str_split(pattern = "c", simplify = T))[,1], "c")
+df$GF <- paste0((df$condition %>% stringr::str_split(pattern = "c", simplify = T))[,2])
+
+#df$Query <- factor(df$oc, levels = c(paste0(unique((all@meta.data %>% filter(stage == "Stage1"))$ann), "_t1"),
+#                                     paste0(unique((all@meta.data %>% filter(stage == "Stage2"))$ann), "_t2"),
+#                                     paste0(unique((all@meta.data %>% filter(stage == "Stage3"))$ann), "_t3"),
+#                                     paste0(unique((all@meta.data %>% filter(stage == "Stage4"))$ann), "_t4")))
+#df$Reference <- factor(df$c_j, levels = c(paste0(unique((all@meta.data %>% filter(stage == "Stage1"))$ann), "_t1"),
+#                                         paste0(unique((all@meta.data %>% filter(stage == "Stage2"))$ann), "_t2"),
+#                                         paste0(unique((all@meta.data %>% filter(stage == "Stage3"))$ann), "_t3"),
+#                                         paste0(unique((all@meta.data %>% filter(stage == "Stage4"))$ann), "_t4")))
+
+df$Distance <- df$`<d_ij>`
+df$Sig <- 1/((df$q_ij)+1)
+
+# put them into useful orders
+
+df$Reference <- factor(df$Reference, levels = c("PSM", "PSM-to-IM", "IM_1", "IM_2", "IM_3", "nc_Meso", "PM_1", "PM_2", "preNC", "NMP"))
+df$Query <- factor(df$Query, levels = c("NPC", "Nephron", "Nephrogenic", "Stroma", "Mesenchyme_1", "Mesenchyme_2", "Mesenchyme_3", "Neural", "NMP_tNC", "NMP_NP", "Myotome"))
+df$GF <- factor(df$GF, levels = c("4F", "4F200", "4FG11", "4FA", "4FC", "4E", "4FL"))
+
+
+```
+
+Same for stage 3 to stage 4
+
+```{r}
+df2 <- map(c(1:12, 14:21), ~read_csv(paste0("data/CAT_test_results/Test", .x, "/from_Stage_4_to_Stage_3_absolute_distances.csv")))
+df2 <- map2(df2, 
+           c(paste0("3c", c("4F", "4FG11", "4F200", "4FA", "4FC", "4FL", "4E")),
+             paste0("4c", c("4F", "4FG11", "4F200", "4FA", "4FC", "4E")),
+             paste0("5c", c("4F", "4FG11", "4F200", "4FA", "4FC", "4FL", "4E"))), ~.x %>% mutate(condition = .y))
+
+df2 <- bind_rows(df2[[1]], df2[2:20])
+
+head(df2)
+
+df2$Query <- (df2$oc %>% stringr::str_split(pattern = "_Stage", simplify = T))[,1]
+df2$Reference <- (df2$c_j %>% stringr::str_split(pattern = "_Stage", simplify = T))[,1]
+
+df2.theme <- theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+                  #,
+                  panel.background = element_rect(fill = "white"))
+                  #panel.grid = element_blank())
+
+df2$CHIR <- paste0((df2$condition %>% stringr::str_split(pattern = "c", simplify = T))[,1], "c")
+df2$GF <- paste0((df2$condition %>% stringr::str_split(pattern = "c", simplify = T))[,2])
+
+#df2$Query <- factor(df2$oc, levels = c(paste0(unique((all@meta.data %>% filter(stage == "Stage1"))$ann), "_t1"),
+#                                     paste0(unique((all@meta.data %>% filter(stage == "Stage2"))$ann), "_t2"),
+#                                     paste0(unique((all@meta.data %>% filter(stage == "Stage3"))$ann), "_t3"),
+#                                     paste0(unique((all@meta.data %>% filter(stage == "Stage4"))$ann), "_t4")))
+#df2$Reference <- factor(df2$c_j, levels = c(paste0(unique((all@meta.data %>% filter(stage == "Stage1"))$ann), "_t1"),
+#                                         paste0(unique((all@meta.data %>% filter(stage == "Stage2"))$ann), "_t2"),
+#                                         paste0(unique((all@meta.data %>% filter(stage == "Stage3"))$ann), "_t3"),
+#                                         paste0(unique((all@meta.data %>% filter(stage == "Stage4"))$ann), "_t4")))
+
+df2$Distance <- df2$`<d_ij>`
+df2$Sig <- 1/((df2$q_ij)+1)
+
+
+df2$Reference <- factor(df2$Reference, levels = c("NPC", "Nephron", "Nephrogenic", "Stroma", "Mesenchyme_1", "Mesenchyme_2", "Mesenchyme_3", "Neural", "NMP_tNC", "NMP_NP", "Myotome"))
+df2$Query <- factor(df2$Query, levels = c("NPC", "Metanephric", "EN", "EDT", "DT", "EPT", "PEC", "EPod", "Pod", "CS", "MS", "MesS", 
+                                          "Stalled_NP_MM", "PRRX1/2-PreMuscle", "Satellite-cells", "Myocyte-like", "Astrocyte-like", "Glia-like", "Neural-like"))
+df2$GF <- factor(df2$GF, levels = c("4F", "4F200", "4FG11", "4FA", "4FC", "4E", "4FL"))
+
+```
+
+```{r, fig.height=6, fig.width=10}
+ggplot() +
+  geom_point(data = filter(df, GF %in% c("4F", "4F200")), aes(CHIR, GF, colour = Distance, size = Sig)) +
+  #geom_tile(data = filter(df, GF %in% c("4F", "4F200")), aes(CHIR, GF, fill = Distance), colour = "black") +
+  facet_grid(cols = vars(Query), rows = vars(Reference)) +
+  #scale_colour_gradient2(low = "navy", mid = "lightblue", high = "grey", midpoint = 50,
+  #scale_colour_gradient2(low = "purple", mid = "lightblue", high = "yellow", midpoint = 50,
+  scale_colour_gradient2(low = "purple", mid = "orange", high = "grey", midpoint = 50,
+                         breaks = c(20, 50, 80),
+                         limits = c(20, 81)) +
+  #scale_fill_viridis_b() +
+  theme_linedraw() +
+  df.theme 
+
+```
+
+
+```{r, fig.width=6, fig.width=12}
+ggplot() +
+  geom_point(data = filter(df2, Query %!in% c("EN", "EDT", "DT", "EPT", "EPod", "Pod", "PEC") &
+                             Reference != "Nephron" & GF %in% c("4F", "4F200")), aes(CHIR, GF, colour = Distance, size = Sig)) +
+  #geom_tile(data = filter(df2, Query %!in% c("EN", "EDT", "DT", "EPT", "EPod", "Pod", "PEC") &
+  #                           Reference != "Nephron" & GF %in% c("4F", "4F200")), aes(CHIR, GF, fill = Distance), colour = "black") +
+  facet_grid(cols = vars(Query), rows = vars(Reference)) +
+  #scale_colour_gradient2(low = "navy", mid = "lightblue", high = "grey", midpoint = 50,
+  #scale_colour_gradient2(low = "purple", mid = "lightblue", high = "yellow", midpoint = 50,
+  scale_colour_gradient2(low = "purple", mid = "orange", high = "grey", midpoint = 50,
+                         breaks = c(20, 50, 80),
+                         limits = c(20, 81)) +
+  #scale_fill_viridis_b() +
+  theme_linedraw() +
+  df.theme 
+```

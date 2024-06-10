@@ -1,0 +1,440 @@
+---
+title: "Man2_Figure5"
+date: "`r Sys.Date()`"
+author: "Sean Wilson"
+output:
+  rmdformats::readthedown:
+  highlight: kate
+  toc: true
+#output:
+#  prettydoc::html_pretty:
+#    theme: cayman
+#    highlight: github
+#    toc: true
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_dir = here::here("docs/"))})
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(rmdformats)
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(ggrepel)
+source(here::here("code/general_r_functions.R"))
+source(here::here("code/project_functions.R"))
+source(here::here("code/circle_plot.R"))
+source(here::here("code/datavis.R"))
+library(plotly)
+seed <- 250395
+## Global options
+options(max.print="1000")
+opts_chunk$set(echo=FALSE,
+	             cache=FALSE,
+               cache.lazy = FALSE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE,
+               fig.width = 9,
+               fig.height = 6,
+               dpi = 600,
+               echo=FALSE)
+opts_knit$set(width=500, root.dir = here::here())
+options(future.globals.maxSize = Inf)
+
+```
+
+
+
+## Whole dataset
+
+
+```{r}
+all <- read_rds("data/rds/Wilson_kidney_organoid_atlas.rds")
+all$gf <- gsub("G11", "G", all$gf)
+all$condition <- gsub("G11", "G", all$condition)
+
+s3 <- read_rds("data/rds/Stage3.rds")
+s3$gf <- gsub("G11", "G", s3$gf)
+s3$condition <- gsub("G11", "G", s3$condition)
+s4 <- read_rds("data/rds/Stage4.rds")
+s2 <- read_rds("data/rds/Stage2.rds")
+```
+
+```{r}
+new.col <- c(DevKidCC::myColours()[c(unique(s4$DKCC))], ggplotColors(8))
+names(new.col) <- c(names(new.col)[1:20], 
+                    "Astrocyte-like", "Glia-like", "Metanephric", "Stalled_NP_MM", "Neural-like",
+                    "Satellite-cells", "PRRX1/2-PreMuscle", "Myocyte-like")
+pop.types <- list(nephron = c("NPC", "EN", "PEC", "EPod", "Pod", "EPT", "PT", "EDT", "LOH", "DT", "UOS", "UTip", "UIS", "Metanephric"),
+                  stroma = c("SPC", "MS", "CS", "MesS"),
+                  offtarget = c("Myocyte-like", "Satellite-cells", "PRRX1/2-PreMuscle", "Astrocyte-like", "Glia-like", "Neural-like", "Stalled_NP_MM"))
+s123ann <- unique((all@meta.data %>% filter(stage != "Stage4"))$ann)
+s123.cols <- c(ggplotColors(6), ggplotColors(10), ggplotColors(12))
+names(s123.cols) <- s123ann
+s123.cols
+```
+
+
+```{r, fig.width=10, fig.height=9}
+s3$condition <- factor(s3$condition, levels = c(paste0("3c", c("4F", "4FG", "4F200", "4FA", "4FC", "4FL", "4E")),
+                                                paste0("4c", c("4F", "4FG", "4F200", "4FA", "4FC", "4FL", "4E")),
+                                                paste0("5c", c("4F", "4FG", "4F200", "4FA", "4FC", "4FL", "4E"))
+                                                ))
+DimPlot(s3[, s3$gf %in% c("4F", "4FC", "4FL")], split.by = "condition", ncol = 3, group.by = "ann", cols = c(new.col, s123.cols))
+```
+
+```{r, fig.width=16, fig.height=4}
+a <- (DimPlot(s3[, s3$gf %in% c("4F", "4FC", "4FL")], group.by = "ann", cols = c(new.col, s123.cols), label = T, repel = T) + NoAxes()) +
+      (DimPlot(s3[, s3$gf %in% c("4F", "4FC", "4FL")], split.by = "gf", ncol = 3, group.by = "chir", cols = cc) + NoAxes()) 
+
+a + plot_layout(design = "aabbbbb")
+
+```
+
+
+```{r}
+s2.dm <- read_csv("data/tables/DiffMap_Stage2.csv")
+s2.md <- all@meta.data %>% filter(stage == "Stage2")
+points <- sample(1:nrow(s2.md), size = 10000)
+
+allcols <- c(s123.cols, new.col)
+```
+
+```{r, fig.width=6, fig.height=4}
+(ggplot((s2.dm %>% mutate(Ann = s2.md$ann))[,] %>% filter(Ann %in% c("PSM", "IM_1", "IM_2", "IM_3", "PSM-to-IM", "PM_1", "PM_2", "NMP", "preNC", "nc_Meso"))) +
+  geom_point(aes(DC1, DC2, colour = Ann), size = 0.1, alpha = 0.5)) + 
+  geom_hline(yintercept = 0, linetype='dotted',) +
+  geom_vline(xintercept = 0, linetype='dotted',) +
+  #geom_text_repel()
+  theme_classic() + 
+  NoAxes() +
+  theme(legend.text = element_text(size=10)) +
+  scale_colour_manual(values = allcols[c("PSM", "IM_1", "IM_2", "IM_3", "PSM-to-IM", "PM_1", "PM_2", "NMP", "preNC", "nc_Meso")])
+
+(ggplot((s2.dm %>% mutate(Ann = s2.md$ann))[,] %>% filter(Ann %in% c("PSM", "IM_1", "IM_2", "IM_3", "PSM-to-IM", "PM_1", "PM_2", "NMP", "preNC", "nc_Meso"))) +
+  geom_point(aes(DC1, DC2, colour = Ann), size = 2)) + 
+  geom_hline(yintercept = 0, linetype='dotted',) +
+  geom_vline(xintercept = 0, linetype='dotted',) +
+  #geom_text_repel()
+  theme_classic() + 
+  NoAxes() +
+  theme(legend.text = element_text(size=10)) +
+  scale_colour_manual(values = allcols[c("PSM", "IM_1", "IM_2", "IM_3", "PSM-to-IM", "PM_1", "PM_2", "NMP", "preNC", "nc_Meso")])
+  
+map(unique(s2.md$condition), ~
+(ggplot((s2.dm %>% mutate(Ann = s2.md$ann, Condition = s2.md$condition))[,] %>% filter(Condition == .x )) +
+  geom_point(aes(DC1, DC2, colour = Ann), size = 1)) + 
+  geom_hline(yintercept = 0, linetype='dotted',) +
+  geom_vline(xintercept = 0, linetype='dotted',) +
+  lims(x = c(-0.01, 0.01), y = c(-0.03, 0.015)) +
+  theme_classic() + 
+  NoAxes() +
+  theme(legend.position = "none") +
+  ggtitle(paste0(.x)) +
+  scale_colour_manual(values = allcols[c("PSM", "IM_1", "IM_2", "IM_3", "PSM-to-IM", "PM_1", "PM_2", "NMP", "preNC", "nc_Meso")])
+)
+```
+
+
+```{r, fig.width=6, fig.height=4}
+StrDotPlot(s2[, s2$gf %in% c("4F", "4FL")], group.by = "condition", features = c("PAX8", "PAX2", "OSR1", "ITGA8", "PDGFRA", "PDGFRB", 
+                                                                                 "TCF15", "PAX3", "FOXD1", "NTN1", "ROBO2"), 
+           dot.scale = 10)
+StrDotPlot(s3[, s3$gf %in% c("4F", "4FL")], group.by = "condition", features = c("PAX8", "PAX2", "OSR1", "ITGA8", "PDGFRA", "PDGFRB", 
+                                                                                 "TCF15", "PAX3", "FOXD1", "NTN1", "ROBO2"), 
+           dot.scale = 10)
+
+```
+
+
+
+```{r}
+s2.ge <- all[, all$stage=="Stage2"]@assays$SCT@counts %>% as.data.frame() %>% t() %>% as.data.frame()
+
+
+```
+
+
+
+```{r}
+ggplot((s2.dm %>% mutate(Ann = s2.md$ann, Condition = s2.md$condition,
+                          PDGFRA = s2.ge$PDGFRA,
+                          ITGA8 = s2.ge$ITGA8,
+                          TCF15 = s2.ge$TCF15,
+                          FOXD1 = s2.ge$FOXD1,
+                          SOX2 = s2.ge$SOX2,
+                          PAX3 = s2.ge$PAX3,
+                         PAX8 = s2.ge$PAX8,
+                          ZIC2 = s2.ge$ZIC2)) %>% arrange(ITGA8)) +
+  geom_point(aes(DC1, DC2, colour = ITGA8), size = 1, alpha = 1) + 
+  geom_hline(yintercept = 0, linetype='dotted',) +
+  geom_vline(xintercept = 0, linetype='dotted',) +
+  lims(x = c(-0.01, 0.01), y = c(-0.03, 0.015)) +
+  theme_classic() + 
+  NoAxes() +
+  ggtitle("ITGA8") +
+  theme(legend.position = "none") +
+  scale_colour_viridis_b(direction = -1)
+
+ggplot((s2.dm %>% mutate(Ann = s2.md$ann, Condition = s2.md$condition,
+                          PDGFRA = s2.ge$PDGFRA,
+                          ITGA8 = s2.ge$ITGA8,
+                          TCF15 = s2.ge$TCF15,
+                          FOXD1 = s2.ge$FOXD1,
+                          SOX2 = s2.ge$SOX2,
+                          PAX3 = s2.ge$PAX3,
+                         PAX8 = s2.ge$PAX8,
+                          ZIC2 = s2.ge$ZIC2)) %>% arrange(PDGFRA)) +
+  geom_point(aes(DC1, DC2, colour = PDGFRA), size = 1, alpha = 1) + 
+  geom_hline(yintercept = 0, linetype='dotted',) +
+  geom_vline(xintercept = 0, linetype='dotted',) +
+  lims(x = c(-0.01, 0.01), y = c(-0.03, 0.015)) +
+  theme_classic() + 
+  NoAxes() +
+  ggtitle("PDGFRA") +
+  theme(legend.position = "none") +
+  scale_colour_viridis_b(direction = -1)
+
+ggplot((s2.dm %>% mutate(Ann = s2.md$ann, Condition = s2.md$condition,
+                          PDGFRA = s2.ge$PDGFRA,
+                          ITGA8 = s2.ge$ITGA8,
+                          TCF15 = s2.ge$TCF15,
+                          FOXD1 = s2.ge$FOXD1,
+                          SOX2 = s2.ge$SOX2,
+                          PAX3 = s2.ge$PAX3,
+                         PAX8 = s2.ge$PAX8,
+                          ZIC2 = s2.ge$ZIC2)) %>% arrange(PAX8)) +
+  geom_point(aes(DC1, DC2, colour = PAX8), size = 1, alpha = 1) + 
+  geom_hline(yintercept = 0, linetype='dotted',) +
+  geom_vline(xintercept = 0, linetype='dotted',) +
+  lims(x = c(-0.01, 0.01), y = c(-0.03, 0.015)) +
+  theme_classic() + 
+  NoAxes() +
+  ggtitle("PAX8") +
+  theme(legend.position = "none") +
+  scale_colour_viridis_b(direction = -1)
+
+ggplot((s2.dm %>% mutate(Ann = s2.md$ann, Condition = s2.md$condition,
+                          PDGFRA = s2.ge$PDGFRA,
+                         COL11A1 = s2.ge$COL11A1,
+                         NR2F1 = s2.ge$NR2F1,
+                          ITGA8 = s2.ge$ITGA8,
+                          TCF15 = s2.ge$TCF15,
+                          FOXD1 = s2.ge$FOXD1,
+                          SOX2 = s2.ge$SOX2,
+                          PAX3 = s2.ge$PAX3,
+                         PAX8 = s2.ge$PAX8,
+                          ZIC2 = s2.ge$ZIC2)) %>% arrange(TCF15)) +
+  geom_point(aes(DC1, DC2, colour = TCF15), size = 1, alpha = 1) + 
+  geom_hline(yintercept = 0, linetype='dotted',) +
+  geom_vline(xintercept = 0, linetype='dotted',) +
+  lims(x = c(-0.01, 0.01), y = c(-0.03, 0.015)) +
+  theme_classic() + 
+  NoAxes() +
+  ggtitle("TCF15") +
+  theme(legend.position = "none") +
+  scale_colour_viridis_b(direction = -1)
+
+ggplot((s2.dm %>% mutate(Ann = s2.md$ann, Condition = s2.md$condition,
+                          PDGFRA = s2.ge$PDGFRA,
+                         COL11A1 = s2.ge$COL11A1,
+                         NR2F1 = s2.ge$NR2F1,
+                          ITGA8 = s2.ge$ITGA8,
+                          TCF15 = s2.ge$TCF15,
+                          FOXD1 = s2.ge$FOXD1,
+                          SOX2 = s2.ge$SOX2,
+                          PAX3 = s2.ge$PAX3,
+                         PAX8 = s2.ge$PAX8,
+                          ZIC2 = s2.ge$ZIC2)) %>% arrange(SOX2)) +
+  geom_point(aes(DC1, DC2, colour = SOX2), size = 1, alpha = 1) + 
+  geom_hline(yintercept = 0, linetype='dotted',) +
+  geom_vline(xintercept = 0, linetype='dotted',) +
+  lims(x = c(-0.01, 0.01), y = c(-0.03, 0.015)) +
+  theme_classic() + 
+  NoAxes() +
+  ggtitle("SOX2") +
+  theme(legend.position = "none") +
+  scale_colour_viridis_b(direction = -1)
+
+ggplot((s2.dm %>% mutate(Ann = s2.md$ann, Condition = s2.md$condition,
+                          PDGFRA = s2.ge$PDGFRA,
+                         COL11A1 = s2.ge$COL11A1,
+                         NR2F1 = s2.ge$NR2F1,
+                          ITGA8 = s2.ge$ITGA8,
+                          TCF15 = s2.ge$TCF15,
+                          FOXD1 = s2.ge$FOXD1,
+                          SOX2 = s2.ge$SOX2,
+                          PAX3 = s2.ge$PAX3,
+                         PAX8 = s2.ge$PAX8,
+                          ZIC2 = s2.ge$ZIC2)) %>% arrange(PAX3)) +
+  geom_point(aes(DC1, DC2, colour = PAX3), size = 1, alpha = 1) + 
+  geom_hline(yintercept = 0, linetype='dotted',) +
+  geom_vline(xintercept = 0, linetype='dotted',) +
+  lims(x = c(-0.01, 0.01), y = c(-0.03, 0.015)) +
+  theme_classic() + 
+  NoAxes() +
+  ggtitle("PAX3") +
+  theme(legend.position = "none") +
+  scale_colour_viridis_b(direction = -1)
+
+ggplot((s2.dm %>% mutate(Ann = s2.md$ann, Condition = s2.md$condition,
+                          PDGFRA = s2.ge$PDGFRA,
+                         CITED1 = s2.ge$CITED1,
+                         NR2F1 = s2.ge$NR2F1,
+                          ITGA8 = s2.ge$ITGA8,
+                          TCF15 = s2.ge$TCF15,
+                          FOXD1 = s2.ge$FOXD1,
+                          SOX2 = s2.ge$SOX2,
+                          PAX3 = s2.ge$PAX3,
+                         PAX8 = s2.ge$PAX8,
+                          ZIC2 = s2.ge$ZIC2)) %>% arrange(CITED1)) +
+  geom_point(aes(DC1, DC2, colour = CITED1), size = 1, alpha = 1) + 
+  geom_hline(yintercept = 0, linetype='dotted',) +
+  geom_vline(xintercept = 0, linetype='dotted',) +
+  lims(x = c(-0.01, 0.01), y = c(-0.03, 0.015)) +
+  theme_classic() + 
+  NoAxes() +
+  ggtitle("CITED1") +
+  theme(legend.position = "none") +
+  scale_colour_viridis_b(direction = -1)
+
+ggplot((s2.dm %>% mutate(Ann = s2.md$ann, Condition = s2.md$condition,
+                          PDGFRA = s2.ge$PDGFRA,
+                         COL11A1 = s2.ge$COL11A1,
+                         NR2F1 = s2.ge$NR2F1,
+                          ITGA8 = s2.ge$ITGA8,
+                          TCF15 = s2.ge$TCF15,
+                          FOXD1 = s2.ge$FOXD1,
+                          SOX2 = s2.ge$SOX2,
+                          PAX3 = s2.ge$PAX3,
+                         PAX8 = s2.ge$PAX8,
+                          ZIC2 = s2.ge$ZIC2)) %>% arrange(ZIC2)) +
+  geom_point(aes(DC1, DC2, colour = ZIC2), size = 1, alpha = 1) + 
+  geom_hline(yintercept = 0, linetype='dotted',) +
+  geom_vline(xintercept = 0, linetype='dotted',) +
+  lims(x = c(-0.01, 0.01), y = c(-0.03, 0.015)) +
+  theme_classic() + 
+  NoAxes() +
+  ggtitle("ZIC2") +
+  theme(legend.position = "none") +
+  scale_colour_viridis_b(direction = -1)
+
+ggplot((s2.dm %>% mutate(Ann = s2.md$ann, Condition = s2.md$condition,
+                          PDGFRA = s2.ge$PDGFRA,
+                         COL11A1 = s2.ge$COL11A1,
+                         NR2F1 = s2.ge$NR2F1,
+                          ITGA8 = s2.ge$ITGA8,
+                          TCF15 = s2.ge$TCF15,
+                          TMEM88 = s2.ge$TMEM88,
+                          SOX2 = s2.ge$SOX2,
+                          PAX3 = s2.ge$PAX3,
+                         PAX8 = s2.ge$PAX8,
+                          ZIC2 = s2.ge$ZIC2)) %>% arrange(TMEM88)) +
+  geom_point(aes(DC1, DC2, colour = TMEM88), size = 1, alpha = 1) + 
+  geom_hline(yintercept = 0, linetype='dotted',) +
+  geom_vline(xintercept = 0, linetype='dotted',) +
+  lims(x = c(-0.01, 0.01), y = c(-0.03, 0.015)) +
+  theme_classic() + 
+  NoAxes() +
+  ggtitle("TMEM88") +
+  theme(legend.position = "none") +
+  scale_colour_viridis_b(direction = -1)
+
+ggplot((s2.dm %>% mutate(Ann = s2.md$ann, Condition = s2.md$condition,
+                          PDGFRA = s2.ge$PDGFRA,
+                         TAGLN = s2.ge$TAGLN,
+                         NR2F1 = s2.ge$NR2F1,
+                          ITGA8 = s2.ge$ITGA8,
+                          TCF15 = s2.ge$TCF15,
+                          PRRX1 = s2.ge$PRRX1,
+                          SOX2 = s2.ge$SOX2,
+                          PAX3 = s2.ge$PAX3,
+                         PAX8 = s2.ge$PAX8,
+                          ZIC2 = s2.ge$ZIC2)) %>% arrange(TAGLN)) +
+  geom_point(aes(DC1, DC2, colour = TAGLN), size = 1, alpha = 1) + 
+  geom_hline(yintercept = 0, linetype='dotted',) +
+  geom_vline(xintercept = 0, linetype='dotted',) +
+  lims(x = c(-0.01, 0.01), y = c(-0.03, 0.015)) +
+  theme_classic() + 
+  NoAxes() +
+  ggtitle("TAGLN") +
+  theme(legend.position = "none") +
+  scale_colour_viridis_b(direction = -1)
+```
+
+
+
+```{r, fig.width=5, fig.height=12}
+StrDotPlot(all, features = c("TMEM88", "PDGFRA", "ITGA8"), group.by = "ann")
+```
+
+```{r, fig.width=16}
+ComponentBar(all@meta.data %>% filter(stage == "Stage3", gf %in% c("4F", "4FC", "4FL")), identity = "condition", component = "ann", show.pct = T, show.text = 10) + 
+  scale_fill_discrete(type = allcols)
+```
+
+
+```{r, fig.width=9, fig.height=16}
+s3$cond.order <- factor(s3$condition, levels = c(paste0(c("3c", "4c", "5c"), c("4F")),
+                                                 paste0(c("3c", "4c", "5c"), c("4F200")),
+                                                 paste0(c("3c", "4c", "5c"), c("4FG11")),
+                                                 paste0(c("3c", "4c", "5c"), c("4FA")),
+                                                 paste0(c("3c", "4c", "5c"), c("4FC")),
+                                                 paste0(c("3c", "4c", "5c"), c("4E")),
+                                                 paste0(c("3c", "4c", "5c"), c("4FL"))))
+DimPlot(s3, group.by = "ann", cols = allcols[names(allcols)%in%unique(s3$ann)], split.by = "cond.order", ncol = 3) + NoAxes() + theme(legend.position = "bottom")
+
+```
+
+```{r, fig.width=3, fig.height=16}
+s3$gf.order <- factor(s3$gf, levels = c("4F", "4F200", "4FG11", "4FA", "4FC", "4E", "4FL"))
+
+DimPlot(s3, group.by = "chir", cols = cc, split.by = "gf.order", ncol = 1) + NoAxes() + theme(legend.position = "bottom")
+
+```
+
+
+Stage 4 FL
+
+```{r}
+df3 <- map(c("3c", "5c"), ~
+            ComponentHeatMapDF(s4, identity = "condition", component = "ann") %>% 
+            transmute(Identity = Identity, Component = Component, Pct = Pct) %>% 
+            filter(Identity %in% c(paste0(.x, c("4FL")))) 
+)
+
+df3 <- bind_rows(df3[[1]], df3[[2]]) 
+```
+
+
+```{r, fig.width=6, fig.height=9}
+df3 %>% 
+  mutate(Component = factor(Component, levels = c("NPC", "Metanephric", "EN", "EDT", "EPT", "LOH", "DT", "PT", "PEC", "EPod", "Pod", 
+                                                  "SPC", "CS", "MS", "MesS",
+                                                  "Stalled_NP_MM", "PRRX1/2-PreMuscle", "Satellite-cells", "Myocyte-like",
+                                                  "Neural-like", "Glia-like", "Astrocyte-like",
+                                                  "UTip", "UIS", "UOS", "Endo"
+                                                  ))) %>%
+  ggplot() +
+  #  geom_segment( aes(x=Component, xend=Component, y=ifelse(Control>16, 16, Control), yend=ifelse(Test>16, 16, Test)), color="black") +
+  #geom_point( aes(x=Component, y=Control), color="red", size=3 ) +
+  #geom_point( aes(x=Component, y=Test), color="blue", size=3 ) +
+  geom_col(aes(Pct, Component, fill = Identity), colour = "black", position = "dodge", stat = "identity", width = 0.7) +
+  #scale_y_log10() +
+  #coord_flip()+
+  
+  scale_fill_discrete(type = cc[c(1,3)]) +
+  #xlab("") +
+  #ylab("Population %") +
+  xlim(c(0, 50)) +
+  theme_light() +
+  theme(legend.position = "bottom",
+        axis.text = element_text(size=15)
+  ) 
+
+```
+
+

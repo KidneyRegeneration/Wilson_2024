@@ -1,0 +1,135 @@
+---
+title: "Man2_Figure2"
+date: "`r Sys.Date()`"
+author: "Sean Wilson"
+output:
+  rmdformats::readthedown:
+  highlight: kate
+  toc: true
+#output:
+#  prettydoc::html_pretty:
+#    theme: cayman
+#    highlight: github
+#    toc: true
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_dir = here::here("docs/"))})
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(rmdformats)
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(ggrepel)
+source(here::here("code/general_r_functions.R"))
+source(here::here("code/project_functions.R"))
+source(here::here("code/circle_plot.R"))
+source(here::here("code/datavis.R"))
+library(plotly)
+seed <- 250395
+## Global options
+options(max.print="1000")
+opts_chunk$set(echo=FALSE,
+	             cache=FALSE,
+               cache.lazy = FALSE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE,
+               fig.width = 9,
+               fig.height = 6,
+               dpi = 600,
+               echo=FALSE)
+opts_knit$set(width=500, root.dir = here::here())
+options(future.globals.maxSize = Inf)
+
+```
+
+
+
+## Whole dataset
+
+
+```{r}
+all <- read_rds("data/rds/Wilson_kidney_organoid_atlas.rds")
+s4 <- read_rds("data/rds/Stage4.rds")
+all$gf <- gsub("G11", "G", all$gf)
+all$condition <- gsub("G11", "G", all$condition)
+
+s4$gf <- gsub("G11", "G", s4$gf)
+s4$condition <- gsub("G11", "G", s4$condition)
+```
+
+```{r}
+new.col <- c(DevKidCC::myColours()[c(unique(s4$DKCC))], ggplotColors(8))
+names(new.col) <- c(names(new.col)[1:20], 
+                    "Astrocyte-like", "Glia-like", "Metanephric", "Stalled_NP_MM", "Neural-like",
+                    "Satellite-cells", "PRRX1/2-PreMuscle", "Myocyte-like")
+pop.types <- list(nephron = c("NPC", "EN", "PEC", "EPod", "Pod", "EPT", "PT", "EDT", "LOH", "DT", "UOS", "UTip", "UIS", "Metanephric"),
+                  stroma = c("SPC", "MS", "CS", "MesS"),
+                  offtarget = c("Myocyte-like", "Satellite-cells", "PRRX1/2-PreMuscle", "Astrocyte-like", "Glia-like", "Neural-like", "Stalled_NP_MM"))
+s123ann <- unique((all@meta.data %>% filter(stage != "Stage4"))$ann)
+s123.cols <- c(ggplotColors(6), ggplotColors(10), ggplotColors(12))
+names(s123.cols) <- s123ann
+s123.cols
+
+theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=20),
+        axis.ticks = element_blank())
+```
+
+```{r, fig.width=9, fig.height=6}
+ComponentBar(s4@meta.data %>% filter(ann %in% c("NPC", "EN", "EPT", "PT", "EDT", "LOH", "DT", "EPod", "Pod", "PEC")), identity = "condition", component = "ann", show.pct = T, show.text = 100) + coord_flip() + 
+ scale_fill_manual(name = "Identity", values = new.col) + NoLegend() +
+  theme(axis.text.y = element_text(size=12)) |
+ComponentBar(s4@meta.data %>% filter(ann %in% c("NPC", "EN", "EPT", "PT", "EDT", "LOH", "DT", "EPod", "Pod", "PEC")), identity = "condition", component = "ann", show.pct = F, show.text = 100) + coord_flip() + 
+ scale_fill_manual(name = "Identity", values = new.col) + 
+  theme(axis.title.y = element_text(size=0),
+        axis.text.y = element_text(size=0))
+
+
+
+
+ComponentBar(s4@meta.data %>% filter(ann %!in% c("SPC", "CS", "MS", "MesS", "Endo",
+                                                 "NPC", "EN", "EPT", "PT", "EDT", "LOH", "DT", "EPod", "Pod", "PEC",
+                                                 "UTip", "UOS", "UIS")), identity = "condition", component = "ann", show.pct = T, show.text = 100) + coord_flip() + 
+ scale_fill_manual(name = "Identity", values = new.col) + NoLegend() +
+  theme(axis.text.y = element_text(size=12)) |
+ComponentBar(s4@meta.data %>% filter(ann %!in% c("SPC", "CS", "MS", "MesS", "Endo",
+                                                 "NPC", "EN", "EPT", "PT", "EDT", "LOH", "DT", "EPod", "Pod", "PEC",
+                                                 "UTip", "UOS", "UIS")), identity = "condition", component = "ann", show.pct = F, show.text = 100) + coord_flip() + 
+ scale_fill_manual(name = "Identity", values = new.col) + 
+  theme(axis.title.y = element_text(size=0),
+        axis.text.y = element_text(size=0))
+```
+
+```{r, fig.width=6, fig.height=6}
+ComponentBar(s4@meta.data %>% filter(ann %in% c("UTip", "UOS", "UIS")), identity = "condition", component = "ann", show.pct = T, show.text = 101) + coord_flip() + 
+ scale_fill_manual(name = "Identity", values = new.col) + NoLegend() +
+  theme(axis.text.y = element_text(size=12)) |
+ComponentBar(s4@meta.data %>% filter(ann %in% c("UTip", "UOS", "UIS")), identity = "condition", component = "ann", show.pct = F, show.text = 101) + coord_flip() + 
+ scale_fill_manual(name = "Identity", values = new.col) + 
+  theme(axis.title.y = element_text(size=0),
+        axis.text.y = element_text(size=0))
+
+ComponentBar(s4@meta.data %>% filter(ann %in% c("SPC", "CS", "MS", "MesS", "Endo")), identity = "condition", component = "ann", show.pct = T, show.text = 100) + coord_flip() + 
+ scale_fill_manual(name = "Identity", values = new.col) + NoLegend() +
+  theme(axis.text.y = element_text(size=12)) |
+ComponentBar(s4@meta.data %>% filter(ann %in% c("SPC", "CS", "MS", "MesS", "Endo")), identity = "condition", component = "ann", show.pct = F, show.text = 100) + coord_flip() + 
+ scale_fill_manual(name = "Identity", values = new.col) + 
+  theme(axis.title.y = element_text(size=0),
+        axis.text.y = element_text(size=0)) 
+```
+
+
+
+```{r, fig.width=6, fig.height=6}
+StrDotPlot(s4[, s4$ann %in% c("Astrocyte-like", "Glia-like", "Myocyte-like", "Neural-like", "PRRX1/2-PreMuscle",
+                              "Satellite-cells", "Stalled_NP_MM")], group.by = "ann", 
+           features = c("SOX2", "GDF10", "SOX10", "PLP1", "ELAVL3", "ELAVL4",
+                        "STMN2", "PITX2", "TNNI2", "COL3A1", "PRRX1", "MSC", "ATF3")) + coord_flip()
+```
+
+
+

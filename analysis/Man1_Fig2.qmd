@@ -1,0 +1,355 @@
+---
+title: "Manuscript 1 Figure 2"
+date: "`r Sys.Date()`"
+author: "Sean Wilson"
+output:
+  rmdformats::readthedown:
+  highlight: kate
+  toc: true
+#output:
+#  prettydoc::html_pretty:
+#    theme: cayman
+#    highlight: github
+#    toc: true
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_dir = here::here("docs/"))})
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(rmdformats)
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+source(here::here("code/general_r_functions.R"))
+source(here::here("code/project_functions.R"))
+source(here::here("code/circle_plot.R"))
+source(here::here("code/datavis.R"))
+library(plotly)
+seed <- 250395
+## Global options
+options(max.print="1000")
+opts_chunk$set(echo=TRUE,
+	             cache=FALSE,
+               cache.lazy = FALSE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE,
+               fig.width = 9,
+               fig.height = 6,
+               dpi = 600)
+opts_knit$set(width=500, root.dir = here::here())
+options(future.globals.maxSize = Inf)
+
+```
+
+
+## Manuscript 1, Figure 2
+
+This figure describes the annotation of cellular identity in the first two stages.
+
+
+```{r}
+s1 <- read_rds("data/rds/Stage1.rds")
+s4 <- read_rds("data/rds/Stage4.rds")
+s1$stage.cluster <- paste0("Stage1_c", s1$SCT_snn_res.0.5)
+
+theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=20),
+        axis.ticks = element_blank())
+```
+
+### Figure 2A: UMAP representation of stage 1 samples collected at 3, 4 and 5 days of CHIR culture. Points are grouped by age.
+
+```{r, fig.width=4, fig.height=3}
+DimPlot(s1, group.by = "age", label = T, label.size = 7) + 
+  theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=20),
+        axis.ticks = element_blank())
+```
+
+### Figure 2B: UMAP representation of stage 1 samples collected at 3, 4 and 5 days of CHIR culture. Points are grouped by clustering at resolution of 0.5
+
+```{r, fig.width=4, fig.height=3}
+DimPlot(s1, group.by = "SCT_snn_res.0.5", label = T, label.size = 7) + 
+  theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=20),
+        axis.ticks = element_blank())
+```
+
+### Figure 2C: DotPlot showing the top 5 differentially expressed genes in each cluster.
+
+```{r}
+s1.degs <- FindAllMarkers(SetIdent(s1, value = "stage.cluster"),
+                          only.pos = T, 
+                          assay = "RNA", 
+                          slot = "data",
+                          random.seed = 250395)
+s1.degs.top <- s1.degs %>% dplyr::group_by(cluster) %>% top_n(5, pct.1-pct.2) %>% mutate(cluster = factor(cluster, level = paste0("Stage1_c", 0:8))) %>% arrange(cluster)
+```
+
+```{r, fig.height=4, fig.width=11}
+StrDotPlot(s1, group.by = "stage.cluster", features = unique(s1.degs.top$gene)) +
+  theme(axis.title = element_text(size=0))
+```
+
+
+### Figure 2D: Pearson correlation of cluster DEGs 
+
+
+```{r}
+s1.pb <- pseudobulk(s1, "stage.cluster")
+```
+
+
+```{r, fig.width=6, fig.height=5}
+genes <- as.matrix(table(s1.degs$cluster, s1.degs$gene))
+pearson <- cor(t(genes))
+NMF::aheatmap(pearson, border_color = "black", treeheight = c(25, 0))
+
+```
+
+### Figure 2E: DotPlot showing expression of key early gastrulation population markers
+
+```{r, fig.height=4, fig.width=8}
+StrDotPlot(s1, group.by = "stage.cluster", 
+           features = c("POU5F1", "EPCAM", "SOX2", "NANOG", "CDH1", "EOMES", "SOX10", "MSX2",
+                        "T", "MIXL1", "FGF8", "FGF17", "CDX1",
+                        "CDX2", "CDH2", "DLL3", "TBX6",
+                        "FOXC1", "MSGN1", "PAX3")) +
+  theme(axis.title = element_text(size=0))
+```
+
+
+### Figure 2F: UMAP of stage 1 with annotation information
+
+```{r, fig.width=6, fig.height=3.5}
+DimPlot(s1, group.by = "ann", label = T, label.size = 5, cols = allcols) + 
+  theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=15),
+        axis.ticks = element_blank())
+```
+
+### Figure 2G: UMAP of stage 2 split and grouped by age/chir
+
+```{r}
+s2 <- read_rds("data/rds/Stage2.rds")
+s2$stage.cluster <- paste0("Stage2_c", s2$SCT_snn_res.0.3)
+```
+
+```{r, fig.width=16, fig.height=5}
+map2(c("7", "8", "9"), c(1, 2, 3), ~
+       DimPlot(s2, cells.highlight = list(rownames(s2@meta.data %>% filter(age==.x))),
+               cols.highlight = ifelse(.x!="unassigned", ggplotColors(3)[.y], "black"),
+               pt.size = 0.1) + 
+       ggtitle(.x) +
+       #NoAxes() & 
+       theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=20),
+        legend.position = "none",
+        axis.ticks = element_blank()))  %>%  
+  wrap_plots(ncol = 3)
+
+DimPlot(s2, group.by = "age", label = T, label.size = 7) + 
+  NoAxes() + 
+  theme(legend.text = element_text(size = 22),
+        title = element_text(size=0))
+```
+
+### Figure 2H: UMAP representation of stage 2 samples collected at 7, 8 and 9 days of directed differentiation. Points are grouped by clusters at resolution 0.3.
+
+```{r, fig.width=5.5, fig.height=4}
+DimPlot(s2, group.by = "SCT_snn_res.0.3", label=T, label.size=7) + 
+  theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=20),
+        axis.ticks = element_blank())
+```
+
+### Figure 2I: DotPlot showing the top 4 differentially expressed genes in each cluster.
+
+```{r}
+s2.degs <- FindAllMarkers(SetIdent(s2, value = "stage.cluster"),
+                          only.pos = T, 
+                          assay = "RNA", 
+                          slot = "data",
+                          random.seed = 250395)
+s2.degs.top <- s2.degs %>% dplyr::group_by(cluster) %>% top_n(8, pct.1-pct.2) %>% mutate(cluster = factor(cluster, level = paste0("Stage2_c", 0:9))) %>% arrange(cluster)
+```
+
+```{r, fig.height=4, fig.width=18}
+StrDotPlot(s2, group.by = "stage.cluster", features = unique(c(s2.degs.top$gene)))
+```
+
+
+
+B: Stage 2
+
+```{r}
+s2.pb <- pseudobulk(s2, "stage.cluster")
+```
+
+
+```{r, fig.width=6, fig.height=5}
+genes <- as.matrix(table(s2.degs$cluster, s2.degs$gene))
+pearson <- cor(t(genes))
+NMF::aheatmap(pearson, border_color = "black", treeheight = c(25, 0))
+
+```
+
+
+```{r, fig.height=4, fig.width=7}
+StrDotPlot(s2, group.by = "stage.cluster", 
+           features = c("MIXL1", "SOX2", "MSX2", "ZIC1", "SOX10",
+                        "DLL3", "FGF8", "TBX6", "MSGN1", 
+                        "CDX2", "FOXC1",
+                        "TCF15", "PAX3",
+                        "PAX8", "CITED1", "SALL1", "EYA1", "PAX2", 
+                        "GATA3", "HOXD11",
+                        "FOXF1", "NKX2-5"))
+```
+
+```{r, fig.width=6, fig.height=6}
+DimPlot(s2, group.by = "ann", label=T, label.size=6, repel=T, cols = allcols) + 
+  theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=15),
+        axis.ticks = element_blank(),
+        legend.position = "bottom")
+```
+
+
+
+
+
+## Supplementaries
+
+Atlas.
+
+Figure 2G: Reference atlas expression of key markers
+
+```{r}
+w3 <- read_rds("data/rds/Zeng_week3_ref.rds")
+a <- c("TTR", "APOA2", "FLT1", "KDR", "HBA2", "HBA1",
+                        "MYL9", "NKX2-5", "COL3A1", "GATA6", "PLAT", "LUM",
+                        "PAX8", "LHX1", "TBX3", "OSR1", "TGFB1", "PITX2",
+                        "MEOX2", "ALDH1A2", "FGF18", "MEOX1", "CITED1", "TBX6", "SHH", "T",
+                        "FGF8", "CDX2", "EPCAM", "DLX5", "CA4", "PAX3", "EGR2",
+                        "RFX4", "OTX2", "DLK1", "SOX2", "SOX10", "MPZ")
+w3$ann <- gsub("cMesodermA", "cMesoderm", w3$ann)
+w3$ann <- gsub("cMesodermB", "cMesoderm", w3$ann)
+
+w3$ann <- gsub("eProgA", "eProg", w3$ann)
+w3$ann <- gsub("eProgB", "eProg", w3$ann)
+
+w3$ann.order <- factor(w3$ann, levels = c("Notochord",
+                                          "NeuralCrest", "NeuralTubeA", "NeuralTubeB", "NeuralTubeC",
+                                          "NMP",
+                                          "ParaxialMesoderm", "PresomiticMesoderm", "Somite", "MyocyteProg",
+                                          "LateralPlateA", "IntermediateMesoderm", "LateralPlateB", "Mesenchyme", "CardiacMyocyte",
+                                          "Endoderm", "Endothelium", "PrimitiveErythroid"
+                                          ))
+```
+
+
+```{r, fig.width=12, fig.height=6}
+StrDotPlot(w3, group.by = "ann.order", features = a)
+```
+
+Figure 2H: Zeng reference and stage 1/2 combination heatmap
+
+
+
+```{r}
+s1.pb <- pseudobulk(s1, "stage.cluster")
+s2.pb <- pseudobulk(s2, "stage.cluster")
+w3.pb <- pseudobulk(w3, "ann")
+
+genes <- intersect(rownames(w3.pb), rownames(s1.pb))
+
+counts <- bind_cols(list(s1.pb[genes,], s2.pb[genes,], w3.pb[genes,]))
+
+genes <- intersect(rownames(w3.pb), rownames(s1.pb))
+counts <- bind_cols(list(s1.pb[genes,], s2.pb[genes,], w3.pb[genes,]))
+library(sva)
+
+corrected_data = ComBat_seq(counts = as.matrix(counts), batch = c(rep("FS19", 19),
+                                                                      rep("Atlas", 18)))
+```
+
+
+
+```{r, fig.width=9, fig.height=9}
+pearson <- cor(corrected_data[c("TTR", "APOA2", "FLT1", "KDR", "HBA2", "HBA1",
+                        "MYL9", "NKX2-5", "COL3A1", "GATA6", "PLAT", "LUM",
+                        "PAX8", "LHX1", "TBX3", "OSR1", "TGFB1", "PITX2",
+                        "MEOX2", "ALDH1A2", "FGF18", "MEOX1", "CITED1", "TBX6", "SHH", "T",
+                        "FGF8", "CDX2", "EPCAM", "DLX5", "CA4", "PAX3", "EGR2",
+                        "RFX4", "OTX2", "DLK1", "SOX2", "SOX10", "MPZ"),])
+annuse <- c("yellow","purple","black")
+names(annuse) <- c("Atlas", "Stage1", "Stage2")
+NMF::aheatmap(pearson, border_color = "black", treeheight = c(50, 0),
+              annColors = list(annuse),
+              annRow = c(rep("Stage1", 9), rep("Stage2", 10), rep("Atlas", 18)))
+```
+
+
+
+Supplementary: Comparison using DEGs from either the reference or stage data
+
+```{r}
+degs <- FindAllMarkers(SetIdent(w3, value = "ann"), test.use="t", only.pos=T, verbose = F, random.seed = 250395)
+degs.top5 <- degs %>% dplyr::group_by(cluster) %>% top_n(20, pct.1-pct.2)
+
+degs.s12 <- FindAllMarkers(SetIdent(s1, value = "stage.cluster"), test.use="t", only.pos=T, verbose = F, random.seed = 250395) %>% 
+  bind_rows(FindAllMarkers(SetIdent(s2, value = "stage.cluster"), test.use="t", only.pos=T, verbose = F, random.seed = 250395))
+degs.s12.top5 <- degs.s12 %>% dplyr::group_by(cluster) %>% top_n(20, pct.1-pct.2)
+```
+
+```{r, fig.width=9, fig.height=9}
+pearson <- cor(corrected_data[unique(degs.top5$gene)[unique(degs.top5$gene)%in%rownames(corrected_data)],])
+NMF::aheatmap(pearson, border_color = "black", treeheight = c(50, 0), 
+              annColors = list(annuse),
+              annRow = c(rep("Stage1", 9), rep("Stage2", 10), rep("Atlas", 18)))
+
+pearson <- cor(corrected_data[unique(degs.s12.top5$gene)[unique(degs.s12.top5$gene)%in%rownames(corrected_data)],])
+NMF::aheatmap(pearson, border_color = "black", treeheight = c(50, 0), 
+              annColors = list(annuse),
+              annRow = c(rep("Stage1", 9), rep("Stage2", 10), rep("Atlas", 18)))
+
+```
+
+
+Figure 2I: DotPlot showing the expression of key marker genes for relevant populations
+
+```{r}
+c("POU5F1", "EPCAM", "SOX2",
+  "SOX10", "MSX2", "ZIC1", "ZIC2",
+  "T", "MIXL1", "FGF8", "FGF17", "HES7",
+  "CDX1", "CDX2", "WNT5A",
+  "CDH2", "DLL3", "TBX6", "SP5",
+  "MSGN1", "PAX3", "FOXC1", "FOXC2",
+  "PAX8", "OSR1", "CITED1", "ITGA8", "SALL1", "EYA1",
+  "FOXF1", "TCF15", "FOXD1", "COL3A1") -> mgenes
+```
+
+```{r, fig.width=10, fig.height=8}
+StrDotPlot(s1, group.by = "stage.cluster", features = mgenes) /
+StrDotPlot(s2, group.by = "stage.cluster", features = mgenes) 
+
+```
+
+
+
+
+Figure 2L: UMAP of stage 2 with annotation information
+
+```{r, fig.width=8, fig.height=4}
+DimPlot(s2, group.by = "ann", label = T, label.size = 6) + 
+  NoAxes() + 
+  theme(legend.text = element_text(size = 18),
+        title = element_text(size=0))
+```
+
+
+
+

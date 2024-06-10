@@ -1,0 +1,259 @@
+---
+title: "Manuscript 1 Figure 3"
+date: "`r Sys.Date()`"
+author: "Sean Wilson"
+output:
+  rmdformats::readthedown:
+  highlight: kate
+  toc: true
+#output:
+#  prettydoc::html_pretty:
+#    theme: cayman
+#    highlight: github
+#    toc: true
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_dir = here::here("docs/"))})
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(rmdformats)
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+source(here::here("code/general_r_functions.R"))
+source(here::here("code/project_functions.R"))
+source(here::here("code/circle_plot.R"))
+source(here::here("code/datavis.R"))
+library(plotly)
+seed <- 250395
+## Global options
+options(max.print="1000")
+opts_chunk$set(echo=TRUE,
+	             cache=FALSE,
+               cache.lazy = FALSE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE,
+               fig.width = 9,
+               fig.height = 6,
+               dpi = 600)
+opts_knit$set(width=500, root.dir = here::here())
+options(future.globals.maxSize = Inf)
+
+```
+
+
+## Manuscript 1, Figure 3
+
+This figure describes the annotation of cellular identity in the third stage.
+
+## Figure 3A
+
+Split dimplot showing all cells at stage 3, highlighted by DevKidCC lineage identity
+
+
+```{r}
+s3 <- read_rds("data/rds/Stage3.rds")
+
+theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=20),
+        axis.ticks = element_blank())
+```
+
+
+```{r, fig.width=20, fig.height=5}
+map(c("NPC", "Nephron", "Stroma", "NPC-like", "unassigned"), 
+    ~DimPlot(s3, 
+             cells.highlight = list(rownames(s3@meta.data %>% filter(LineageID==.x))),
+             cols.highlight = ifelse(.x!="unassigned", DevKidCC::myColours()[.x], "black"), sizes.highlight = 0.2) + 
+      ggtitle(.x) +
+      NoAxes() + NoLegend() +
+  theme(axis.text = element_text(size=0),
+        #legend.text = element_text(size=20),
+        #legend.position = "bottom",
+        axis.ticks = element_blank()))  %>%  wrap_plots(ncol = 5)
+```
+
+## Figure 3B
+
+```{r, fig.width=6, fig.height=4}
+DimPlot(s3, group.by = "SCT_snn_res.0.5", label=T, label.size=7) + 
+  theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=17),
+        axis.ticks = element_blank())
+```
+
+
+## Figure 3C
+
+Barchart showing the proportion of cells classified by DevKidCC in each cluster.
+
+```{r, fig.width=4, fig.height=4}
+DevKidCC::ComponentPlot(s3, identity = "SCT_snn_res.0.5", component = "LineageID", show.pct = T, do.label = F) +
+  theme(axis.text = element_text(size=12),
+        title = element_text(size=0),
+        legend.position = "right")
+```
+
+## Supplementary 5
+
+DotPlot of gene expression split by cluster and devkidcc identity
+
+
+```{r, eval=FALSE}
+s3.degs <- FindAllMarkers(SetIdent(s3, value = "SCT_snn_res.0.5"),
+                          only.pos = T, 
+                          assay = "RNA", 
+                          slot = "data",
+                          random.seed = 250395)
+
+write_csv(s3.degs, "data/tables/S3DEGs.csv")
+```
+
+```{r}
+s3.degs <- read_csv("data/tables/S3DEGs.csv")
+s3.degs.top <- s3.degs %>% dplyr::group_by(cluster) %>% top_n(10, pct.1-pct.2) %>% 
+  mutate(cluster = factor(paste0("Stage3_c", cluster), level = paste0("Stage3_c", 0:11))) %>% arrange(cluster)
+```
+
+
+
+```{r, fig.width=24, fig.height=6}
+#s3$Res0.5_LinID <- paste0("Stage3_c", s3$SCT_snn_res.0.5, "_", s3$LineageID)
+StrDotPlot(s3, group.by = "SCT_snn_res.0.5", features = unique((s3.degs.top %>% dplyr::group_by(cluster) %>% top_n(10, pct.1-pct.2))$gene))
+
+```
+
+```{r}
+s3$stage.cluster <- factor(paste0("Stage3_c", s3$SCT_snn_res.0.5), levels = paste0("Stage3_c", 0:11))
+s3.pb <- pseudobulk(s3, "stage.cluster")
+```
+
+
+```{r, fig.width=6, fig.height=4}
+genes <- as.matrix(table(s3.degs$cluster, s3.degs$gene))
+pearson <- cor(t(genes))
+NMF::aheatmap(pearson, border_color = "black", treeheight = c(50, 0))
+```
+
+```{r, fig.width=6, fig.height=5}
+s3.degs$cluster <- paste0("Stage3_c", s3.degs$cluster)
+genes <- as.matrix(table(s3.degs$cluster, s3.degs$gene))
+pearson <- cor(t(genes))
+NMF::aheatmap(pearson, border_color = "black", treeheight = c(30, 0))
+
+```
+
+### Figure 3D
+
+DotPlot showing expression of important marker genes in stage 3
+
+```{r, fig.width=8, fig.height=4}
+StrDotPlot(s3, group.by = "stage.cluster", 
+           features = c("SOX2", "ZIC2", "MSX1", "MSX2", "ZIC1",
+                        "SOX10", "CRABP1",
+                        "PAX3", "TCF15", "MEOX2", "MEOX1",
+                        "PAX8", "PAX2", "CITED1", "WT1", "SIX2", "ITGA8", "FOXC1",
+                        "COL3A1", "COL1A1", "PDGFRA", "PDGFRB",
+                        "PRRX1", "MYL1"))
+```
+
+
+
+```{r, fig.width=4, fig.height=12}
+map2(c(3,4,5), cc, ~DimPlot(s3, cells.highlight = list(rownames(s3@meta.data %>% filter(chir==paste0(.x, "c")))), 
+                            cols.highlight = .y, sizes.highlight = 0.2) + ggtitle(paste0(.x, "c")) +
+      theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=0),
+        axis.ticks = element_blank()))  %>%  wrap_plots(ncol = 1)
+```
+
+
+
+```{r, fig.width=3, fig.height=5}
+DevKidCC::ComponentPlot(s3[, s3$LineageID == "Nephron"], identity = "chir", show.pct = T, component = "DKCC", do.label = F) +
+  theme(axis.text = element_text(size = 15))
+```
+
+
+```{r, fig.height=6, fig.width=9}
+FeaturePlot(s3, order = T, cols = vcol,
+            features = c("PAX2", "PAX8", "CITED1",
+                         "PDGFRA", "ZIC1", "PRRX1"), ncol = 3) &
+  NoLegend() & 
+  theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=0),
+        axis.ticks = element_blank()) 
+
+FeaturePlot(s3, order = T, cols = vcol,
+            features = c("PAX2"))
+```
+
+```{r, fig.width=9, fig.height=6}
+
+new.col <- c(DevKidCC::myColours()[c("NPC", "Nephron", "Stroma")], ggplotColors(9))
+names(new.col) <- c("NPC", "Nephron", "Stroma", "Nephrogenic", "NMP_tNC", "Mesenchyme_1", "Neural", "NMP_NP", "Mesenchyme_2", "Myotome", "Mesenchyme_3", "Cycling")
+
+DimPlot(s3, group.by = "ann", reduction = "umap", pt.size=0.2, cols = new.col) & NoAxes()
+```
+
+```{r, fig.height=4, fig.width=12}
+StrDotPlot(s3, group.by = "SCT_snn_res.0.5", dot.min = 0.05, dot.scale = 8,
+           features = c("PAX8", "PAX2", "CITED1", "LHX1", # nephron/nephrogeic
+                        "MYL1", "PRRX1", "DCX", "MYOG", "NKX2-5",  # muscle
+                        "MEOX2", "TCF15","PAX3", # PM
+                        "SOX2", "ZIC1", "ZIC2", "ZIC4", "SEMA3A", "EPHA3", "EPHA4", "PMEL", # neural/nc
+                        "COL3A1", "PDGFRA", "PDGFRB", "CXCL12", "PCDH9", "TNC", "TAGLN"
+                        
+                       ))
+```
+
+```{r, fig.width=3, fig.height=5}
+ComponentBar(s3@meta.data, identity = "chir", show.pct = T, component = "ann", show.text = 101) + 
+  scale_fill_manual(values = allcols[unique(s3@meta.data$ann)]) +
+  theme_minimal() +
+  scale_y_continuous(limits = c(0, 100 + 1), expand = c(0,0)) +
+  theme(axis.text = element_text(size = 15))
+```
+
+
+```{r, fig.width=9, fig.height=6}
+DimPlot(s3, group.by = "ann", reduction = "umap", pt.size=0.2, cols = allcols) +
+  theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=20),
+        axis.ticks = element_blank())
+```
+
+
+
+Panels H to J
+
+```{r, fig.height=7, fig.width=10}
+(map2(c(3,4,5), cc, ~DimPlot(s3, cells.highlight = list(rownames(s3@meta.data %>% filter(chir==paste0(.x, "c")))), 
+                            cols.highlight = .y, sizes.highlight = 0.2) + ggtitle(paste0(.x, "c")) +
+        NoAxes() + NoLegend() +
+        theme(axis.text = element_text(size=0),
+        #legend.text = element_text(size=0),
+        axis.ticks = element_blank()))  %>%  wrap_plots(ncol = 1)) +
+  
+  (DevKidCC::ComponentPlot(s3[, s3$LineageID == "Nephron"], identity = "chir", show.pct = T, component = "DKCC", do.label = F) +
+  theme(axis.text = element_text(size = 15),
+        legend.text = element_text(size=15))) +
+  
+  (ComponentBar(s3@meta.data, identity = "chir", show.pct = T, component = "ann", show.text = 101) + 
+  scale_fill_manual(values = allcols[unique(s3@meta.data$ann)]) +
+  theme_minimal() +
+  scale_y_continuous(limits = c(0, 100 + 1), expand = c(0,0)) +
+  theme(axis.text = element_text(size = 15),
+        axis.text.x = element_text(angle = 45),
+        legend.text = element_text(size=15))) +
+  
+  plot_layout(design = "
+              aaaddee
+              bbbddee
+              cccddee")
+```
+
+

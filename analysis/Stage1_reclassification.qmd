@@ -58,7 +58,7 @@ s1 <- read_rds("data/rds/Stage1.rds")
 
 Load the dimensional reduction that was previously generated, for consistency in graphing
 
-```{r}
+```{r, eval=F}
 s1 <- NormalizeData(s1) %>% 
   ScaleData() %>% 
   CellCycleScoring(s.features = cc.genes.updated.2019$s.genes, g2m.features = cc.genes.updated.2019$g2m.genes)
@@ -127,8 +127,10 @@ StrDotPlot(s1, group.by = "SCT_snn_res.0.5", features = c("POU5F1", "EPCAM", "SO
 
 ```{r}
 png(res = 300, filename = "data/figures/Stage1_StrDotPlot_earlyMarkers.png",units = "mm", width = 200, height = 85)
-StrDotPlot(s1, group.by = "SCT_snn_res.0.5", features = c("POU5F1", "EPCAM", "SOX2", "NANOG", "CDH1", "EOMES", "SOX10", "FGF8", "FGF17", "MIXL1", "T",
-                                                          "CDX1", "CDX2", "CDH2", "DLL3", "FOXC1", "FOXC2", "TBX6", "MSGN1")) +
+StrDotPlot(s1, group.by = "SCT_snn_res.0.5", features = c("POU5F1", "EPCAM", "SOX2", "NANOG", "CDH1", "EOMES", "SOX10", 
+                                                          "T", "MIXL1", "FGF8", "FGF17", "HES7",
+                                                          "CDX1", "CDX2", "CDH2", "DLL3", "TBX6", "MSGN1", "PAX3",
+                                                          "FOXC1", "FOXC2")) +
   theme(title = element_text(size = 0),
         text = element_text(size = 20))
 dev.off()
@@ -156,7 +158,7 @@ pseudobulk <- function(seu, ident) {
 
 
 ```{r}
-s1.markers %>% dplyr::group_by(cluster) %>% top_n()
+#s1.markers %>% dplyr::group_by(cluster) %>% top_n()
 ```
 
 
@@ -348,18 +350,18 @@ Annotation of cells
 
 ```{r}
 ann <- s1@meta.data %>% mutate(SCT_snn_res.0.5 = as.character(SCT_snn_res.0.5)) %>%
-  mutate(ann = case_when(SCT_snn_res.0.5 == "0" ~ "Nascent_Mesoderm_D4",
-                         SCT_snn_res.0.5 == "1" ~ "Nascent_Mesoderm_D5",
-                         SCT_snn_res.0.5 == "2" ~ "Primitive_Streak",
-                         SCT_snn_res.0.5 == "3" ~ "Primitive_Streak",
-                         SCT_snn_res.0.5 == "4" ~ "Nascent_Mesoderm_D5",
-                         SCT_snn_res.0.5 == "5" ~ "Nascent_Mesoderm_D4",
-                         SCT_snn_res.0.5 == "6" ~ "Primitive_Streak",
-                         SCT_snn_res.0.5 == "7" ~ "Epiblast_like",
-                         SCT_snn_res.0.5 == "8" ~ "Epiblast_like",
+  mutate(ann = case_when(SCT_snn_res.0.5 == "0" ~ "late_PSM_1",
+                         SCT_snn_res.0.5 == "1" ~ "late_PSM_2",
+                         SCT_snn_res.0.5 == "2" ~ "early_PSM",
+                         SCT_snn_res.0.5 == "3" ~ "early_PSM",
+                         SCT_snn_res.0.5 == "4" ~ "late_PSM_2",
+                         SCT_snn_res.0.5 == "5" ~ "late_PSM_1",
+                         SCT_snn_res.0.5 == "6" ~ "early_PSM",
+                         SCT_snn_res.0.5 == "7" ~ "PS/NMP",
+                         SCT_snn_res.0.5 == "8" ~ "Epiblast-like",
                          TRUE ~ SCT_snn_res.0.5)) %>% rownames_to_column() %>% 
   dplyr::select(c("rowname", "ann")) %>% mutate(stage = "Stage_1")
-s1$ann <- ann$ann
+s1$ann <- factor(ann$ann, levels = c("Epiblast-like", "PS/NMP", "early_PSM", "late_PSM_1", "late_PSM_2"))
 
 ```
 
@@ -376,4 +378,17 @@ DimPlot(s1, group.by = "ann", reduction = "umap", label = T, label.size = 8, pt.
 dev.off()
 ```
 
+```{r}
+png(res = 300, filename = "data/figures/Stage1_lineagemarkers.png",units = "mm", width = 125, height = 85)
+StrDotPlot(s1, group.by = "ann", features = c("EPCAM", "SOX2", "POU5F1",
+                                              "MIXL1", "T", "HES7",
+                                              "DLL3", "TBX6", "PAX3")) +
+  theme(title = element_text(size = 0),
+        text = element_text(size = 20))
+dev.off()
+```
+
+```{r}
+write_rds(s1, "data/rds/Stage1.rds")
+```
 

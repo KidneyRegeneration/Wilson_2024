@@ -1,0 +1,290 @@
+---
+title: "Man1_Figure4_Stage4"
+date: "`r Sys.Date()`"
+author: "Sean Wilson"
+output:
+  rmdformats::readthedown:
+  highlight: kate
+  toc: true
+#output:
+#  prettydoc::html_pretty:
+#    theme: cayman
+#    highlight: github
+#    toc: true
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_dir = here::here("docs/"))})
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(rmdformats)
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+source(here::here("code/general_r_functions.R"))
+source(here::here("code/project_functions.R"))
+source(here::here("code/circle_plot.R"))
+source(here::here("code/datavis.R"))
+library(plotly)
+seed <- 250395
+## Global options
+options(max.print="1000")
+opts_chunk$set(echo=FALSE,
+	             cache=FALSE,
+               cache.lazy = FALSE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE,
+               fig.width = 9,
+               fig.height = 6,
+               dpi = 600,
+               echo=FALSE)
+opts_knit$set(width=500, root.dir = here::here())
+options(future.globals.maxSize = Inf)
+
+```
+
+## Goal
+
+Melissa and I have reevaluated the data in stage 4 and this document will update the data and generate figures for the manuscripts.
+
+
+## Load stage 4 data
+
+```{r}
+s4 <- read_rds("data/rds/Stage4.rds") 
+```
+
+Umap plots
+
+```{r, fig.width=16}
+DimPlot(s4, group.by = "gf", split.by = "chir", ncol = 3)
+```
+```{r}
+library(DevKidCC)
+```
+
+
+Split umap plots with grey unselected cells
+
+```{r, fig.width=7, fig.height=6}
+map(c("NPC", "Nephron", "UrEp", "Stroma", "NPC-like", "unassigned"), ~DimPlot(s4, cells.highlight = list(rownames(s4@meta.data %>% filter(LineageID==.x))), 
+                                                                              cols.highlight = ifelse(.x!="unassigned", myColours()[.x], "black")) + ggtitle(.x) +
+  theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=0),
+        legend.position = "bottom",
+        axis.ticks = element_blank())) 
+```
+
+
+```{r, fig.width=21, fig.height=12}
+map(c("NPC", "Nephron", "UrEp", "Stroma", "NPC-like", "unassigned"), ~DimPlot(s4, cells.highlight = list(rownames(s4@meta.data %>% filter(LineageID==.x))), 
+                                                                              cols.highlight = ifelse(.x!="unassigned", myColours()[.x], "black")) + ggtitle(.x) +
+  NoAxes() + NoLegend() +
+      theme(axis.text = element_text(size=0),
+        #legend.text = element_text(size=0),
+        #legend.position = "none",
+        axis.ticks = element_blank())) %>% 
+  wrap_plots(ncol=3)
+```
+
+split umap plots for chir
+
+```{r, fig.width=7, fig.height=6}
+map2(c(3,4,5), cc, ~DimPlot(s4, cells.highlight = list(rownames(s4@meta.data %>% filter(chir==paste0(.x, "c")))), 
+                            cols.highlight = .y) + ggtitle(paste0(.x, "c")) +
+  theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=0),
+        legend.position = "none",
+        axis.ticks = element_blank()))
+```
+
+```{r, fig.height=6, fig.width=4.5}
+ComponentPlot(s4, identity = "chir", component = "LineageID", show.pct = T, do.label = F) & 
+  theme(text = element_text(size = 25))
+```
+
+```{r, fig.width=16, fig.height=6}
+DimPlot(s4, group.by = "LineageID", split.by = "chir", cols = DevKidCC::myColours()) & theme(text = element_text(size = 30))
+
+```
+
+```{r, fig.width=9, fig.height=6}
+DimPlot(s4, group.by = "LineageID", cols = DevKidCC::myColours()) + NoAxes() & theme(text = element_text(size = 20))
+DimPlot(s4, group.by = "chir", cols = cc) + NoAxes() & theme(text = element_text(size = 20))
+```
+
+```{r, fig.width=9, fig.height=6}
+DimPlot(s4, group.by = "SCT_snn_res.0.3", label = T, label.size = 10) + 
+  theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=15),
+        legend.position = "right",
+        axis.ticks = element_blank()) 
+```
+
+
+```{r, fig.width=9, fig.height=6}
+ComponentPlot(s4, identity = "SCT_snn_res.0.3", component = "LineageID", show.pct = T, do.label = F) + coord_flip() & theme(text = element_text(size = 30))
+```
+
+
+
+```{r, fig.width=16, fig.height=10}
+FeaturePlot(s4, features = c("PDGFRA", "COL3A1", "PRRX1", "COL9A1", "OGN", 
+                             "SOX2", "ZIC1", "ZIC2", "PAX3", "MSX1", 
+                             "MYOG", "PITX2", "PAX7", "STMN2", "ELAVL4", 
+                             "MLANA", "SOX10", "S100B", "DNAJB1", "DNAJB4"
+                             ), # region 5 - less defined
+            ncol = 5, order = T, cols = vcol) & NoAxes() & NoLegend()
+
+
+FeaturePlot(s4, features = c("PDGFRA", "COL3A1", "PRRX1", "COL9A1", "OGN", 
+                             "SOX2", "ZIC1", "ZIC2", "PAX3", "MSX1", 
+                             "MYOG", "PITX2", "PAX7", "STMN2", "ELAVL4", 
+                             "MLANA", "SOX10", "S100B", "DNAJB1", "DNAJB4"
+                             ), # region 5 - less defined
+            ncol = 5, order = T, cols = vcol) &
+  theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=0),
+        #axis.title = element_text(size=5),
+        legend.position = "none",
+        axis.ticks = element_blank())
+```
+
+
+```{r, fig.width=11, fig.height=3.5}
+StrDotPlot(s4, group.by = "SCT_snn_res.0.3", dot.scale = 10,
+           features = c("PDGFRA", "COL3A1", "PRRX1", "COL9A1", "OGN", 
+                             "SOX2", "ZIC1", "ZIC2", "PAX3", "MSX1", 
+                             "MYOG", "PITX2", "PAX7", "STMN2", "ELAVL4", 
+                             "MLANA", "SOX10", "S100B", "DNAJB1", "DNAJB4"
+                             ))
+
+StrDotPlot(s4[, s4$SCT_snn_res.0.3 %in% c(0,1,2,4,8,9,10,11,12,14)], group.by = "SCT_snn_res.0.3", dot.scale = 6, 
+           features = c("GDF10", "ZIC1", "ZIC2", "SOX2",
+                        "MXD1", "VGF", "NEU1",
+                        "PITX2", "FGFR4", "MSC", "DCN", "MYL1", "MYOD1", "PAX7",
+                        "CLSPN", "CENPK", "CENPU",
+                        "PRRX1", "PRRX2", "PDGFRA",
+                        "PLP1", "SOX10", "CDH19", "PMEL", "MLANA",
+                        "ELAVL2", "ELAVL3", "ELAVL4", "DCX", "STMN2", "TAGLN3",
+                        "TNNI2", "ACTN2", "TNNT2", "MYOG"
+                             ))
+```
+
+
+```{r}
+pop.types <- list(nephron = c("NPC", "EN", "PEC", "EPod", "Pod", "EPT", "PT", "EDT", "LOH", "DT", "UOS", "UTip", "UIS", "Metanephric"),
+                  stroma = c("SPC", "MS", "CS", "MesS"),
+                  offtarget = c("Myocyte-like", "Satellite-cells", "PRRX1/2-PreMuscle", "Astrocyte-like", "Glia-like", "Neural-like", "Stalled_NP_MM"))
+```
+
+```{r, fig.width=9, fig.height=6}
+nephron.list <- map(pop.types$nephron, ~rownames(s4@meta.data %>% filter(ann %in% .x)))
+names(nephron.list) <- pop.types$nephron
+DimPlot(s4, cells.highlight = nephron.list, sizes.highlight = 0.2,
+        cols.highlight = rev(allcols[pop.types$nephron][order(pop.types$nephron)])) & NoAxes()& theme(text = element_text(size = 30)) +
+  theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=0),
+        #axis.title = element_text(size=5),
+        legend.position = "none",
+        axis.ticks = element_blank())
+
+stroma.list <- map(pop.types$stroma, ~rownames(s4@meta.data %>% filter(ann %in% .x))) 
+names(stroma.list) <- pop.types$stroma
+DimPlot(s4, cells.highlight = stroma.list, sizes.highlight = 0.2,
+        cols.highlight = rev(allcols[pop.types$stroma][order(pop.types$stroma)])) & NoAxes()& theme(text = element_text(size = 30)) +
+  theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=0),
+        #axis.title = element_text(size=5),
+        legend.position = "none",
+        axis.ticks = element_blank())
+
+ot.list <- map(pop.types$offtarget, ~rownames(s4@meta.data %>% filter(ann %in% .x)))
+names(ot.list) <- pop.types$offtarget
+DimPlot(s4, cells.highlight = ot.list, sizes.highlight = 0.2,
+        cols.highlight = rev(allcols[pop.types$offtarget][order(pop.types$offtarget)])) & NoAxes()& theme(text = element_text(size = 25)) +
+  theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=0),
+        #axis.title = element_text(size=5),
+        legend.position = "none",
+        axis.ticks = element_blank())
+```
+
+```{r, fig.width=24, fig.height=5}
+(DimPlot(s4, cells.highlight = nephron.list, sizes.highlight = 0.1,
+        cols.highlight = rev(allcols[pop.types$nephron][order(pop.types$nephron)])) + NoAxes() +
+  theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=20),
+        #axis.title = element_text(size=5),
+        legend.position = "right",
+        axis.ticks = element_blank())) |
+(DimPlot(s4, cells.highlight = stroma.list, sizes.highlight = 0.1,
+        cols.highlight = rev(allcols[pop.types$stroma][order(pop.types$stroma)])) + NoAxes() +
+  theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=20),
+        #axis.title = element_text(size=5),
+        legend.position = "right",
+        axis.ticks = element_blank())) |
+(DimPlot(s4, cells.highlight = ot.list, sizes.highlight = 0.1,
+        cols.highlight = rev(allcols[pop.types$offtarget][order(pop.types$offtarget)])) + NoAxes() +
+  theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=20),
+        #axis.title = element_text(size=5),
+        legend.position = "right",
+        axis.ticks = element_blank()))
+```
+
+
+azimuth on target predictions
+
+```{r}
+s4.sub.on <- read_rds("data/rds/S4_ontarget_subset.rds")
+predictions <- read.delim(here::here('data/azimuth_pred_ontarget_toHDA.tsv'), row.names = 1)
+s4.sub.on <- AddMetaData(
+	object = s4.sub.on,
+	metadata = predictions)
+```
+
+
+```{r, fig.height=6, fig.width=14}
+ggplot(s4.sub.on@meta.data) +
+  geom_jitter(aes(predicted.annotation.l2.score, predicted.annotation.l2), size = 0.1) |
+
+ComponentHeatMapDF(s4.sub.on, "SCT_snn_res.0.3", "predicted.annotation.l2") %>% 
+  mutate(Identity = factor(Identity, levels = paste0(0:14))) %>% 
+  
+  ggplot() +
+  geom_tile(aes(Identity, Component, fill = Pct), colour = "white") +
+  #geom_label(aes(Identity, Component, label = Pct)) +
+  viridis::scale_fill_viridis() + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))
+
+```
+
+
+```{r}
+predictions <- read.delim(here::here('data/azimuth_pred_subset.tsv'), row.names = 1)
+s4.sub.off <- read_rds("data/rds/S4_offtarget_subset.rds")
+s4.sub.off <- AddMetaData(
+	object = s4.sub.off,
+	metadata = predictions)
+
+```
+
+```{r, fig.height=5, fig.width=14}
+ggplot(s4.sub.off@meta.data) +
+  geom_jitter(aes(predicted.annotation.l2.score, predicted.annotation.l2), size = 0.1) |
+
+ComponentHeatMapDF(s4.sub.off, "SCT_snn_res.0.3", "predicted.annotation.l2") %>% 
+  mutate(Identity = factor(Identity, levels = paste0(0:14))) %>% 
+  
+  ggplot() +
+  geom_tile(aes(Identity, Component, fill = Pct), colour = "white") +
+  #geom_label(aes(Identity, Component, label = Pct)) +
+  viridis::scale_fill_viridis() + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))
+
+```
+
+
+

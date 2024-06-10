@@ -1,0 +1,309 @@
+---
+title: "Man2_Figure1_Overview"
+date: "`r Sys.Date()`"
+author: "Sean Wilson"
+output:
+  rmdformats::readthedown:
+  highlight: kate
+  toc: true
+#output:
+#  prettydoc::html_pretty:
+#    theme: cayman
+#    highlight: github
+#    toc: true
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_dir = here::here("docs/"))})
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(rmdformats)
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(ggrepel)
+source(here::here("code/general_r_functions.R"))
+source(here::here("code/project_functions.R"))
+source(here::here("code/circle_plot.R"))
+source(here::here("code/datavis.R"))
+library(plotly)
+seed <- 250395
+## Global options
+options(max.print="1000")
+opts_chunk$set(echo=FALSE,
+	             cache=FALSE,
+               cache.lazy = FALSE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE,
+               fig.width = 9,
+               fig.height = 6,
+               dpi = 600,
+               echo=FALSE)
+opts_knit$set(width=500, root.dir = here::here())
+options(future.globals.maxSize = Inf)
+
+```
+
+
+
+## Whole dataset
+
+
+```{r}
+all <- read_rds("data/rds/Wilson_kidney_organoid_atlas.rds")
+s4 <- read_rds("data/rds/Stage4.rds")
+all$gf <- gsub("G11", "G", all$gf)
+all$condition <- gsub("G11", "G", all$condition)
+
+s4$gf <- gsub("G11", "G", s4$gf)
+s4$condition <- gsub("G11", "G", s4$condition)
+```
+
+
+## Circle graph
+
+Plot a circle graph
+
+```{r, fig.width=20, fig.height=20}
+CoruscantPlot(all, column = "ann", group = "stage", segment = "chir", show.pct = T, text.size = 6, lab.dist = 6)
+EmpirePlot(all, column = "ann", group = "stage", segment = "chir", show.pct = T, text.size = 6, lab.dist = 6)
+```
+
+
+## Whole data annotation
+
+
+
+```{r}
+new.col <- c(DevKidCC::myColours()[c(unique(s4$DKCC))], ggplotColors(8))
+
+names(new.col) <- c(names(new.col)[1:20], 
+                    "Astrocyte-like", "Glia-like", "Metanephric", "Stalled_NP_MM", "Neural-like",
+                    "Satellite-cells", "PRRX1/2-PreMuscle", "Myocyte-like")
+pop.types <- list(nephron = c("NPC", "EN", "PEC", "EPod", "Pod", "EPT", "PT", "EDT", "LOH", "DT", "UOS", "UTip", "UIS", "Metanephric"),
+                  stroma = c("SPC", "MS", "CS", "MesS"),
+                  offtarget = c("Myocyte-like", "Satellite-cells", "PRRX1/2-PreMuscle", "Astrocyte-like", "Glia-like", "Neural-like", "Stalled_NP_MM"))
+
+s123ann <- unique((all@meta.data %>% filter(stage != "Stage4", ann != "NPC"))$ann)
+
+s123.cols <- c(ggplotColors(6), ggplotColors(10), ggplotColors(11))
+names(s123.cols) <- s123ann
+s123.cols
+
+allcols <- c(new.col, s123.cols)
+allcols["NPC"] <- DevKidCC::myColours()["NPC"]
+allcols["Nephron"] <- DevKidCC::myColours()["Nephron"]
+allcols["Stroma"] <- DevKidCC::myColours()["Stroma"]
+
+```
+
+
+```{r, fig.width=16, fig.height=9}
+DimPlot(all, group.by = "ann", label = T, repel = T, cols = allcols, raster = F) + NoAxes()
+```
+
+
+
+
+
+```{r}
+alist <- list()
+conds <- c(paste0("3c", c("4F", "4FG", "4F200", "4FA", "4FC", "4FL", "4E")),
+           paste0("4c", c("4F", "4FG", "4F200", "4FA", "4FC", "4FL", "4E")),
+           paste0("5c", c("4F", "4FG", "4F200", "4FA", "4FC", "4FL", "4E")))
+for (i in conds){
+  alist[[i]] <- c()
+}
+
+alist[[1]] <- c("iPSC", "Stage1_3c", "Stage2_3c4F", "Stage3_3c4F", "Stage4_3c4F")
+alist[[2]] <- c("iPSC", "Stage1_3c", "Stage2_3c4F", "Stage3_3c4FG", "Stage4_3c4FG")
+alist[[3]] <- c("iPSC", "Stage1_3c", "Stage2_3c4F200", "Stage3_3c4F200", "Stage4_3c4F200")
+alist[[4]] <- c("iPSC", "Stage1_3c", "Stage2_3c4FA", "Stage3_3c4FA", "Stage4_3c4FA")
+alist[[5]] <- c("iPSC", "Stage1_3c", "Stage2_3c4FC", "Stage3_3c4FC", "Stage4_3c4FC")
+alist[[6]] <- c("iPSC", "Stage1_3c", "Stage2_3c4FL", "Stage3_3c4FL", "Stage4_3c4FL")
+alist[[7]] <- c("iPSC", "Stage1_3c", "Stage2_3c4E", "Stage3_3c4E", "Stage4_3c4E")
+alist[[8]] <-  c("iPSC", "Stage1_4c", "Stage2_4c4F", "Stage3_4c4F", "Stage4_4c4F")
+alist[[9]] <-  c("iPSC", "Stage1_4c", "Stage2_4c4F", "Stage3_4c4FG", "Stage4_4c4FG")
+alist[[10]] <- c("iPSC", "Stage1_4c", "Stage2_4c4F200", "Stage3_4c4F200", "Stage4_4c4F200")
+alist[[11]] <- c("iPSC", "Stage1_4c", "Stage2_4c4FA", "Stage3_4c4FA", "Stage4_4c4FA")
+alist[[12]] <- c("iPSC", "Stage1_4c", "Stage2_4c4FC", "Stage3_4c4FC", "Stage4_4c4FC")
+alist[[13]] <- c("iPSC", "Stage1_4c", "Stage2_4c4FL", "Stage3_4c4FL")
+alist[[14]] <- c("iPSC", "Stage1_4c", "Stage2_4c4E", "Stage3_4c4E", "Stage4_4c4E")
+alist[[15]] <- c("iPSC", "Stage1_5c", "Stage2_5c4F", "Stage3_5c4F", "Stage4_5c4F")
+alist[[16]] <- c("iPSC", "Stage1_5c", "Stage2_5c4F", "Stage3_5c4FG", "Stage4_5c4FG")
+alist[[17]] <- c("iPSC", "Stage1_5c", "Stage2_5c4F200", "Stage3_5c4F200", "Stage4_5c4F200")
+alist[[18]] <- c("iPSC", "Stage1_5c", "Stage2_5c4FA", "Stage3_5c4FA", "Stage4_5c4FA")
+alist[[19]] <- c("iPSC", "Stage1_5c", "Stage2_5c4FC", "Stage3_5c4FC", "Stage4_5c4FC")
+alist[[20]] <- c("iPSC", "Stage1_5c", "Stage2_5c4FL", "Stage3_5c4FL", "Stage4_5c4FL")
+alist[[21]] <- c("iPSC", "Stage1_5c", "Stage2_5c4E", "Stage3_5c4E", "Stage4_5c4E")
+
+
+```
+
+
+```{r}
+all$stage_condition <- paste0(all$stage, "_", all$condition)
+all$stage_condition <- gsub("iPSC_NA", "iPSC", all$stage_condition)
+```
+
+
+```{r}
+dimsplit <- map(1:length(conds), ~DimPlot(all[, all$stage_condition %in% alist[[.x]]], group.by = "ann", cols = c(new.col, s123.cols), raster = F) + NoLegend() + NoAxes() + ggtitle(conds[.x]))
+```
+
+
+
+```{r, fig.height=8, fig.width=16}
+patchwork::wrap_plots(dimsplit, ncol=7)
+```
+
+## For supplementary
+
+## Heatmaps 
+
+```{r}
+dflist <- map(unique(all$stage), ~
+ComponentHeatMapDF(all[, all$stage==.x], identity = "condition", component = "ann") %>% 
+  #mutate(Identity = factor(Identity, levels = paste0(0:14))) %>% 
+  ggplot() +
+  geom_tile(aes(Identity, Component, fill = Pct), colour = "white") +
+  viridis::scale_fill_viridis() + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1, size = 12),
+                                        axis.text.y = element_text(size=12),
+                                        axis.title = element_text(size=0))
+)
+```
+
+```{r, fig.height=14, fig.width=9}
+dflist %>% wrap_plots(design = "
+                      aaaaaa
+                      bccccc
+                      bccccc
+                      dddddd
+                      dddddd
+                      dddddd
+                      eeeeee
+                      eeeeee
+                      eeeeee
+                      eeeeee")
+```
+
+
+
+```{r, fig.width=24, fig.height=12}
+plot <- map(unique(all$stage)[3:5], ~
+      CoruscantPlot(all[, all$stage==.x], column = "ann", group = "gf", segment = "chir", show.pct = T, text.size = 6, lab.dist = 6, plot.out="flat", position = "dodge")
+      )
+
+plot
+```
+
+
+
+
+```{r, fig.width=6, fig.height=4}
+DimPlot(all, group.by = "stage",  repel = T, raster = F) + NoAxes()
+```
+
+
+```{r, fig.width=9, fig.height=6}
+DimPlot(s4, group.by = "ann",  repel = T, cols = c(new.col, s123.cols), raster = F) + NoAxes()
+```
+
+
+```{r}
+s4dimsplit3c <- map(1:7, ~DimPlot(s4[, s4$condition %in% conds[.x]], group.by = "ann", cols = c(new.col), raster = F) + NoLegend() + NoAxes() + ggtitle(conds[.x]))
+s4dimsplit4c <- map(c(8:12,14), ~DimPlot(s4[, s4$condition %in% conds[.x]], group.by = "ann", cols = c(new.col), raster = F) + NoLegend() + NoAxes() + ggtitle(conds[.x]))
+s4dimsplit5c <- map(15:21, ~DimPlot(s4[, s4$condition %in% conds[.x]], group.by = "ann", cols = c(new.col), raster = F) + NoLegend() + NoAxes() + ggtitle(conds[.x]))
+
+```
+
+
+
+```{r, fig.height=3, fig.width=16}
+patchwork::wrap_plots(s4dimsplit3c, ncol=7)
+patchwork::wrap_plots(s4dimsplit4c, ncol=7)
+patchwork::wrap_plots(s4dimsplit5c, ncol=7)
+```
+
+HOX code
+
+```{r}
+hox <- map(1:13, ~c(paste0("HOXA", .x), 
+                    paste0("HOXB", .x),
+                    paste0("HOXC", .x),
+                    paste0("HOXD", .x))) %>% unlist()
+
+hox <- hox[hox %in% rownames(all)]
+hox
+```
+
+```{r, fig.width=16}
+StrDotPlot(all, features = hox, group.by = "stage")
+sdp.ann <- map(1:4, ~StrDotPlot(all[, all$stage==paste0("Stage", .x)], features = hox, group.by = "ann"))
+sdp.cond <- map(1:4, ~StrDotPlot(all[, all$stage==paste0("Stage", .x)], features = hox, group.by = "condition"))
+```
+
+
+```{r, fig.width=24, fig.height=20}
+c(sdp.ann, sdp.cond) %>% wrap_plots(design = "
+                                    ae
+                                    bf
+                                    bf
+                                    cg
+                                    cg
+                                    cg
+                                    dh
+                                    dh
+                                    dh
+                                    dh")
+```
+
+
+
+
+```{r}
+s4.df <- s4@meta.data
+s4.df <- s4.df %>% 
+  mutate(ann = case_when(ann == "EDT" ~ "Nephron",
+                         ann == "CS" ~ "Stroma",
+                         ann == "Astrocyte-like" ~ "Off-target",
+                         ann == "Neural-like" ~ "Off-target",
+                         ann == "PEC" ~ "Nephron",
+                         ann == "Glia-like" ~ "Off-target",
+                         ann == "Stalled_NP_MM" ~ "Off-target",
+                         ann == "Satellite-cells" ~ "Off-target",
+                         ann == "NPC" ~ "Nephron",
+                         ann == "Metanephric" ~ "Off-target",
+                         ann == "EPod" ~ "Nephron",
+                         ann == "PRRX1/2-PreMuscle" ~ "Off-target",
+                         ann == "Myocyte-like" ~ "Off-target",
+                         ann == "Pod" ~ "Nephron",
+                         ann == "MS" ~ "Stroma",
+                         ann == "MesS" ~ "Stroma",
+                         ann == "DT" ~ "Nephron",
+                         ann == "EN" ~ "Nephron",
+                         ann == "EPT" ~ "Nephron",
+                         ann == "PT" ~ "Nephron",
+                         ann == "Endo" ~ "Stroma",
+                         ann == "UIS" ~ "Ureteric",
+                         ann == "LOH" ~ "Nephron",
+                         ann == "UOS" ~ "Ureteric",
+                         ann == "UTip" ~ "Ureteric",
+                         ann == "SPC" ~ "Stroma"))
+
+```
+
+
+```{r, fig.width=6, fig.height=4}
+s4.df.mut <- table(s4.df$ann, s4.df$condition) %>% as.data.frame()
+s4.df.mut %>%
+  mutate(Identity = factor(s4.df.mut$Var1, levels = c("Off-target", "Ureteric", "Stroma", "Nephron")),
+         Cells = Freq) %>% 
+ggplot() +
+  geom_col(aes(Cells, Var2, fill = Identity), colour = "black") +
+  scale_fill_manual(values = c("grey", "orange", "brown", "cyan"))
+```
+
+

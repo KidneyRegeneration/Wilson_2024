@@ -1,5 +1,5 @@
 ---
-title: "Stage 4 reclassification June 2023"
+title: "Stage 4 annotation"
 date: "`r Sys.Date()`"
 author: "Sean Wilson"
 output:
@@ -58,7 +58,7 @@ s4 <- read_rds("data/rds/Stage4.rds")
 
 ## SCTransform and Dim reduction
 
-```{r}
+```{r, eval=FALSE}
 s4 <- NormalizeData(s4) %>% 
   ScaleData() %>% 
   CellCycleScoring(s.features = cc.genes.updated.2019$s.genes, g2m.features = cc.genes.updated.2019$g2m.genes)
@@ -76,7 +76,7 @@ Umap plots
 DimPlot(s4, group.by = "gf", split.by = "chir", ncol = 3)
 ```
 
-```{r}
+```{r, eval=FALSE}
 write_rds(s4, "data/rds/Stage4.rds")
 ```
 
@@ -231,19 +231,27 @@ If we look at the DEGs defining each cluster this will give us further informati
 First I will look at the higher resolution of 0.6
 
 ```{r}
-deg.s4sub.res0.6 <- FindAllMarkers(SetIdent(s4.sub, value = "SCT_snn_res.0.6"), only.pos = T, test.use = "t", logfc.threshold = 0.25) %>% mutate(diff = pct.1-pct.2)
+deg.s4.res0.6 <- FindAllMarkers(SetIdent(s4, value = "SCT_snn_res.0.6"), only.pos = T, test.use = "t", logfc.threshold = 0.2) %>% mutate(diff = pct.1-pct.2)
 ```
 
+save csv to file
 ```{r}
-top10 <- deg.s4sub.res0.6 %>% dplyr::group_by(cluster) %>% top_n(10, diff)
-top10
+write_csv(deg.s4.res0.6, "data/tables/Stage4_res06_markers.csv")
 ```
+
+
+
+```{r}
+top <- deg.s4.res0.6 %>% dplyr::group_by(cluster) %>% top_n(3, diff)
+top
+```
+
 ```{r, fig.width = 16}
-StrDotPlot(s4.sub, group.by = "SCT_snn_res.0.6", features = unique(c(top10$gene)))
+StrDotPlot(s4.sub, group.by = "SCT_snn_res.0.6", features = unique(c(top$gene)))
 ```
 
 ```{r}
-p <- as.matrix(table(deg.s4sub.res0.6$gene, deg.s4sub.res0.6$cluster))
+p <- as.matrix(table(deg.s4.res0.6$gene, deg.s4.res0.6$cluster))
 p <- cor(p)
 ```
 
@@ -326,6 +334,106 @@ Other populations are fairly conserved between the full data and reanalysed clus
 6. Classification via DKCC is a great first point, particularly for nephrons
 7. Reanalysis of unassigned cells will identify the off-target populations present
 
+
+
+## Section 2: off targets
+
+take all the non-nephron clusters and perform a reanlysis of them alone.
+
+```{r}
+s4.nn <- s4[, s4$SCT_snn_res.0.1 %in% c(0,1,4,5,6,7,8)]
+```
+
+
+```{r}
+DimPlot(s4.nn, group.by = "SCT_snn_res.0.6")
+```
+
+
+reanalyse these cells and look for different populatoins.
+
+```{r}
+s4.nn <- NormalizeData(s4.nn) %>% 
+  ScaleData() %>% 
+  CellCycleScoring(s.features = cc.genes.updated.2019$s.genes, g2m.features = cc.genes.updated.2019$g2m.genes)
+
+s4.nn <- SCTransform(s4.nn, vars.to.regress = c("S.Score", "G2M.Score"), seed.use = 250395)
+
+s4.nn <- RunPCA(s4.nn, npcs = 50, seed.use = 250395)
+s4.nn <- RunUMAP(s4.nn, dims = 1:10, seed.use = 250395)
+```
+
+
+plot out umap
+
+```{r}
+DimPlot(s4.nn, group.by = "condition")
+```
+
+```{r}
+s4.nn <- FindNeighbors(s4.nn)
+s4.nn <- FindClusters(s4.nn, resolution = c(0.1, 0.3, 0.6, 0.9))
+
+```
+
+```{r, fig.width=16, fig.height=12}
+MultiDimPlot(s4.nn, cluster.sequence = c("0.1", "0.3", "0.6", "0.9"))
+```
+
+```{r}
+write_rds(s4.nn, "data/rds/Stage4_NonNeph.rds")
+```
+
+
+we had an older set of annotations, where do they sit?
+
+```{r}
+DimPlot(s4.nn, group.by = "ann", label = T, repel = T)
+```
+
+
+
+```{r}
+s4.nn.deg <- FindAllMarkers(SetIdent(s4.nn, value = "SCT_snn_res.0.6"), only.pos = T, test.use = "t", logfc.threshold = 0.2) %>% mutate(diff = pct.1-pct.2)
+
+```
+
+save output to file
+
+```{r}
+write_csv(s4.nn.deg, "data/tables/Stage4_NonNeph_markers.csv")
+```
+
+
+```{r}
+top <- s4.nn.deg %>% dplyr::group_by(cluster) %>% top_n(4, diff)
+```
+
+
+```{r, fig.width=16}
+StrDotPlot(s4.nn, group.by = "SCT_snn_res.0.6", features = unique(top$gene))
+```
+
+```{r, fig.width=16, fig.height=12}
+FeaturePlot(s4.nn, features = c("PDGFRA", "PRRX1", "COL3A1", "COL9A1", # region 1 - mesenchymal
+                                "MGP", "OGN", "STMN2", "ELAVL4", # region 1 - mesenchymal/chondrocyte and region 2 - glial
+                                "MSX1", "S100B", "SOX10", "MLANA", # region 3 - neural crest glial and region 4 - neurons
+                                "PITX2", "MYOG", "DNAJB1", "DNAJB4", # region 2 and 3 - neural and muscle
+                                "SOX2", "ZIC2", "PAX3", "ZIC1"), # region 5 - less defined
+            ncol = 4, order = T) & NoAxes()
+```
+
+
+```{r}
+DimPlot(s4.nn, group.by = "ann", label = T, repel = T)
+```
+
+
+```{r}
+ComponentBar(s4.nn, "SCT_snn_res.0.6", "LineageID") + coord_flip()
+ComponentBar(s4.nn, "SCT_snn_res.0.6", "LineageID", show.pct = T) + coord_flip()
+ComponentBar(s4.nn, "SCT_snn_res.0.6", "ann", show.pct = T) + coord_flip()
+```
 
 ## Section 2: Targeted analysis of the full dataset
 
@@ -780,7 +888,7 @@ s4.on.seu.sub <- AddMetaData(
 s4.on.seu.sub$HDA_predicted.annotation.l2 <- gsub(" cells", "", s4.on.seu.sub$HDA_predicted.annotation.l2)
 #s4.on.seu.sub$offtarget.clusters <- factor(paste0(s4.on.seu.sub$SCT_snn_res.0.9), levels = paste0(0:23))
 ComponentHeatMapDF(s4.on.seu.sub, identity = "LineageID", component = "HDA_predicted.annotation.l2") %>% 
-  mutate(Identity = factor(Identity, levels = names(myColours()[unique(s4$LineageID)]))) %>% 
+  mutate(Identity = factor(Identity, levels = names(DevKidCC::myColours()[unique(s4$LineageID)]))) %>% 
   ggplot() +
   geom_tile(aes(Identity, Component, fill = Pct), colour = "white") +
   viridis::scale_fill_viridis() + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))
@@ -798,7 +906,7 @@ s4.on.seu.sub@meta.data %>% filter(!is.na(HDA_predicted.annotation.l2)) %>%
   theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1)) + NoLegend()
 
 ComponentHeatMapDF(s4.on.seu.sub[, s4.on.seu.sub$HDA_predicted.annotation.l2.score>0.5], identity = "LineageID", component = "HDA_predicted.annotation.l2") %>% 
-  mutate(Identity = factor(Identity, levels = names(myColours()[unique(s4$LineageID)]))) %>% 
+  mutate(Identity = factor(Identity, levels = names(DevKidCC::myColours()[unique(s4$LineageID)]))) %>% 
   ggplot() +
   geom_tile(aes(Identity, Component, fill = Pct), colour = "white") +
   viridis::scale_fill_viridis() + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))
@@ -1015,7 +1123,7 @@ df.list[["0"]] <- df.list[["0"]] %>%
 df.list[["1"]] <- df.list[["1"]] %>% 
   mutate(ann = "Astrocyte-like")
 df.list[["2"]] <- df.list[["2"]] %>% 
-  mutate(ann = "Mixed")
+  mutate(ann = "Stalled-NMP-MM")
 df.list[["3"]] <- df.list[["3"]] %>% 
   mutate(ann = case_when(LineageID == "Nephron" ~ DKCC,
                          LineageID == "NPC" ~ "NPC",
@@ -1080,7 +1188,7 @@ Remove metanephric as false negatives?
 ```{r}
 new.col <- c(myColours()[c(unique(s4$DKCC))], ggplotColors(8))
 names(new.col) <- c(names(new.col)[1:20], 
-                    "Astrocyte-like", "Glia-like", "Metanephric", "Mixed", "Neural-like",
+                    "Astrocyte-like", "Glia-like", "Metanephric", "Stalled-NMP-MM", "Neural-like",
                     "Satellite-cells", "PRRX1/2-PreMuscle", "Myocyte-like")
 s4$ann <- as.character(s4$ann)
 DimPlot(s4, group.by = "ann", label = T, repel = T, cols = new.col)
@@ -1096,7 +1204,7 @@ DimPlot(s4, group.by = "ann", label = T, repel = T, cols = new.col, label.size =
 #png(res = 300, filename = "data/figures/Stage4_UMAP_LinID_split.png",units = "mm", width = 1200, height = 200)
 pop.types <- list(nephron = c("NPC", "EN", "PEC", "EPod", "Pod", "EPT", "PT", "EDT", "LOH", "DT", "UOS", "UTip", "UIS"),
                   stroma = c("SPC", "MS", "CS", "MesS"),
-                  offtarget = c("Myocyte-like", "Satellite-cells", "PRRX1/2-PreMuscle", "Astrocyte-like", "Glia-like", "Neural-like", "Mixed"))
+                  offtarget = c("Myocyte-like", "Satellite-cells", "PRRX1/2-PreMuscle", "Astrocyte-like", "Glia-like", "Neural-like", "Stalled-NP-MM"))
 map(pop.types, ~DimPlot(s4, cells.highlight = list(rownames(s4@meta.data %>% filter(ann %in% .x))), 
                                                                               cols.highlight = new.col[names(new.col) %in% .x]) + ggtitle(.x) +
   NoAxes() & theme(text = element_text(size = 25), legend.position = "none"))  %>%  wrap_plots(ncol = 6)

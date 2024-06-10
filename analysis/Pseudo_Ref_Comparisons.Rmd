@@ -1,0 +1,91 @@
+---
+title: "Untitled"
+date: "`r Sys.Date()`"
+author: "Sean Wilson"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+    toc: true
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_dir = "../docs/")})
+---
+
+# set up count matrices
+
+```{r}
+library(tidyverse)
+library(edgeR)
+library(limma)
+library(org.Hs.eg.db)
+library(Seurat)
+source(here::here("code/general_r_functions.R"))
+source(here::here("code/project_functions.R"))
+source(here::here("code/circle_plot.R"))
+source(here::here("code/datavis.R"))
+```
+
+
+```{r}
+pseudobulk <- function(seu, ident) {
+  counts <- data.frame(row.names = rownames(seu@assays$RNA@counts))
+  for (i in 1:length(unique(seu@meta.data[,ident]))){
+    temp.seurat <- seu[, seu@meta.data[,ident] == unique(seu@meta.data[,ident])[i]]
+    #temp.seurat <- subset(matorg, ident = unique(matorg$DKCC)[i])
+    temp.counts <- as.data.frame(temp.seurat@assays$RNA@counts)
+    temp.bulk <- data.frame(rowSums(temp.counts))
+    colnames(temp.bulk) <- c(unique(as.character(seu@meta.data[,ident]))[i])
+    counts <- cbind(counts, temp.bulk)
+  }
+  return(counts)
+}
+```
+
+Minn gastruloid (https://doi.org/10.1016/j.stemcr.2021.03.031)
+
+```{r}
+minn <- read_rds(here::here("output/rds/Minn_mesoderm.rds"))
+minn <- minn[, minn$Cell.type %!in% c("hPGCLC", "ExE-like")]
+minn.celltype.pb <- pseudobulk(minn, "Cell.type")
+colnames(minn.celltype.pb) <- paste0("Minn_", colnames(minn.celltype.pb))
+minn.celltype.deg <- read_csv(here::here("output/tables/Minn_markers.csv"))
+minn.celltype.deg <- minn.celltype.deg %>% mutate(ref_ident = paste0("Minn_", cluster))
+```
+
+
+Tyser human gastrula (https://www.nature.com/articles/s41586-021-04158-y)
+
+```{r}
+tyser <- read_rds(here::here("output/rds/Tyser_hGastrula.rds"))
+tyser <- tyser[, tyser$cluster_id %!in% c("Hemogenic Endothelial Progenitors", "ExE Mesoderm", "Erythroblasts")]
+tyser.clusterid.pb <- pseudobulk(tyser, "cluster_id")
+colnames(tyser.clusterid.pb) <- paste0("Tyser_", colnames(tyser.clusterid.pb))
+tyser.clusterid.deg <- read_rds(here::here("output/rds/Tyser_models.rds"))[["DEG"]]
+tyser.clusterid.deg <- tyser.clusterid.deg %>% filter(cluster %!in% c("Hemogenic Endothelial Progenitors", "ExE Mesoderm", "Erythroblasts")) %>% 
+  mutate(ref_ident = paste0("Tyser_", cluster)) %>% mutate(cluster = as.character(cluster))
+```
+
+Diaz-Cuadros hiPSC gastrulation (https://doi.org/10.1038/s41586-019-1885-9)
+
+```{r}
+dc <- read_rds(here::here("output/rds/hsiPS.diaz.rds"))
+dc <- dc[, dc$louvain %!in% c("unk1", "unk2", "unk3", "unk4", "unk5")]
+dc.louvain.pb <- pseudobulk(dc, "louvain")
+colnames(dc.louvain.pb) <- paste0("DC_", colnames(dc.louvain.pb))
+dc.louvain.deg <- FindAllMarkers(SetIdent(dc, value = "louvain"), only.pos=T, test.use="t")
+dc.louvain.deg <- dc.louvain.deg %>% mutate(ref_ident = paste0("DC_", cluster), cluster = as.character(cluster))
+```
+
+Tanigawa E9.5 mouse (https://doi.org/10.1038/s41467-022-28226-7)
+
+```{r}
+e9 <- read_rds(here::here("output/rds/TanigawaE9_ann.rds"))
+e9 <- e9[, e9$Res.0.3_ann %!in% c("unk_1", "unk_2", "unk_3", "unk_4", "unk_5", "unk_6")]
+e9.res03.pb <- pseudobulk(e9, "Res.0.3_ann")
+rownames(e9.res03.pb) <- toupper(rownames(e9.res03.pb))
+colnames(e9.res03.pb) <- paste0("TanE9_", colnames(e9.res03.pb))
+e9.res03.deg <- read_rds(here::here("output/rds/TanE9_models.rds"))[["e9.markers"]]
+e9.res03.deg <- e9.res03.deg %>% filter(cluster %!in% c("unk_1", "unk_2", "unk_3", "unk_4", "unk_5", "unk_6")) %>% 
+  mutate(ref_ident = paste0("TanE9_", cluster)) %>% mutate(cluster = as.character(cluster), gene = toupper(gene))
+```
+
+

@@ -556,12 +556,12 @@ vargenes <- intersect(select_var_1, select_var_2)
 
 ```{r, fig.width=12, fig.height=12}
 pearson <- cor(corrected_data[vargenes,])
-
+png("data/figures/Seq_Comparison_Heatmap.png", width=300, height = 300, units="mm", res = 600)
 NMF::aheatmap(pearson, border_color = "black", treeheight = c(0, 150),
               annCol = ann.list[1:2],
               annRow = ann.list[3],
               annColors = ann.col)
-
+dev.off()
 ```
 
 ```{r}

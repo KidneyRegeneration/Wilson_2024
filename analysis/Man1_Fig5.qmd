@@ -1,0 +1,410 @@
+---
+title: "Man1_Figure5_Trajectories"
+date: "`r Sys.Date()`"
+author: "Sean Wilson"
+output:
+  rmdformats::readthedown:
+  highlight: kate
+  toc: true
+#output:
+#  prettydoc::html_pretty:
+#    theme: cayman
+#    highlight: github
+#    toc: true
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_dir = here::here("docs/"))})
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(rmdformats)
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(ggrepel)
+source(here::here("code/general_r_functions.R"))
+source(here::here("code/project_functions.R"))
+source(here::here("code/circle_plot.R"))
+source(here::here("code/datavis.R"))
+library(plotly)
+seed <- 250395
+## Global options
+options(max.print="1000")
+opts_chunk$set(echo=FALSE,
+	             cache=FALSE,
+               cache.lazy = FALSE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE,
+               fig.width = 9,
+               fig.height = 6,
+               dpi = 600,
+               echo=FALSE)
+opts_knit$set(width=500, root.dir = here::here())
+options(future.globals.maxSize = Inf)
+
+```
+
+## Goal
+
+Visualise the asynchronous differentiation and how cells transition between populations using trajectory analysis.
+
+## Whole dataset broken down by stage.
+
+
+```{r}
+all <- read_rds("data/rds/Wilson_kidney_organoid_atlas.rds")
+```
+
+
+```{r, fig.width=12, fig.height=3}
+DimPlot(all, split.by = "stage", group.by = "stage", pt.size = 2) + 
+  theme_bw(base_line_size = 0, base_rect_size = 1) +
+  theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=15),
+        legend.position = "right",
+        axis.ticks = element_blank())
+```
+
+Can see laggers and leaders - asynchrony. Put the differentiation stage diagram over the top.
+
+## Diffusion mapping of the whole dataset
+
+
+```{r}
+s1234.dc <- read_csv("data/tables/DiffMap_Stage1234.csv")
+d1 <- data.frame(cell = colnames(all))
+s1234.dc <- s1234.dc %>% mutate(cell = colnames(all[, all$stage != "iPSC"]))
+d2 <- left_join(d1, s1234.dc, by = "cell") %>% column_to_rownames("cell")
+d2 <- d2 %>% replace(is.na(.), 0)
+d2 <- -d2
+all@reductions[["dc"]] <- CreateDimReducObject(embeddings = as.matrix(d2), key = "DC_", assay = "RNA")
+```
+
+
+```{r, fig.width=24}
+a <- DimPlot(all[, all$stage != "iPSC"], split.by = "stage", group.by = "stage", pt.size = 1, reduction = "dc", dims = c(2,3)) + NoAxes()
+a
+```
+
+
+```{r}
+b <- DimPlot(all[, all$stage != "iPSC"], group.by = "stage", reduction = "dc", dims = c(1,2)) + 
+  scale_colour_discrete(type = gcols[2:5]) 
+c <- DimPlot(all[, all$stage != "iPSC"], group.by = "stage", reduction = "dc", dims = c(2,3)) + 
+  scale_colour_discrete(type = gcols[2:5]) 
+```
+
+
+```{r, fig.width=10, fig.height=6}
+
+b + c + plot_layout(design = "bcccc", guides = "collect") & theme(legend.text = element_text(size=30),
+                                                                  axis.title = element_text(size=30),
+                                                                  axis.text = element_text(size=0),
+                                                                  axis.ticks = element_blank())
+```
+
+
+Plot them as a violin/jitter plot that shows the distributino of Nephron linage along DC2 and Stroma/off target along DC3
+
+
+Order by dc3
+
+```{r}
+dc <- 
+d2 %>% mutate(ann = all$ann) %>% 
+  group_by(ann) %>%
+  summarise(DC3.mean = mean(DC3),
+            DC2.mean = mean(DC2),
+            n = n())
+
+d2 <- d2 %>% mutate(dc2.order = factor(all$ann, levels = unique((dc %>% arrange(dc$DC2.mean))$ann)),
+                    dc3.order = factor(all$ann, levels = unique((dc %>% arrange(dc$DC3.mean))$ann)),
+                    stage = all$stage,
+                    ann = all$ann)
+```
+
+
+```{r, fig.height=14, fig.width=12}
+ggplot(d2 %>% filter(stage %in% c("Stage2", "Stage3", "Stage4"),
+                     ann %in% c("PSM", "IM_1", "IM_2", "IM_3", "PSM-to-IM", "ncMeso", 
+                                "PT", "EPT", "LOH", "Pod", "UIS", "DT", "UOS", "UTip", "EPod", "EDT", "PEC", "EN", "Nephron", "Metanephric",
+                                "NPC", "Cycling", "Nephrogenic"))) +
+  geom_violin(aes(DC2, dc2.order, colour = stage), alpha = 0.7) +
+  scale_colour_discrete(type = c("#00BF7D", "#00B0F6", "#E76BF3")) +
+  theme_minimal() +
+  theme(axis.title.x = element_text(size=20),
+        axis.title.y = element_text(size=0),
+        axis.text.x = element_text(size=0),
+        axis.text.y = element_text(size=20),
+        legend.position = "none") |
+ggplot(d2 %>% filter(stage %in% c("Stage2", "Stage3", "Stage4"),
+                     ann %!in% c("IM_1", "IM_2", "IM_3", "PSM-to-IM", "ncMeso", 
+                                "PT", "EPT", "LOH", "Pod", "UIS", "DT", "UOS", "UTip", "EPod", "EDT", "PEC", "EN", "Nephron", "Metanephric",
+                                "NPC", "Cycling", "Nephrogenic"))) +
+  geom_violin(aes(DC3, dc3.order, colour = stage), alpha = 0.7) +
+  scale_colour_discrete(type = c("#00BF7D", "#00B0F6", "#E76BF3")) +
+  theme_minimal() +
+  theme(axis.title.x = element_text(size=20),
+        axis.title.y = element_text(size=0),
+        axis.text.x = element_text(size=0),
+        axis.text.y = element_text(size=20),
+        legend.text = element_text(size=20))
+
+
+ggplot(d2 %>% filter(stage %in% c("Stage2", "Stage3", "Stage4"))) +
+  geom_violin(aes(DC2, dc2.order, colour = stage), alpha = 0.7) +
+  theme_minimal() +
+  theme(axis.title = element_text(size=0),
+        axis.text = element_text(size=20)) |
+ggplot(d2 %>% filter(stage %in% c("Stage2", "Stage3", "Stage4"))) +
+  geom_violin(aes(DC3, dc3.order, colour = stage), alpha = 0.7) +
+  theme_minimal() +
+  theme(axis.title.y = element_text(size=0),
+        axis.text = element_text(size=20))
+
+
+
+```
+
+
+Stage 2 alone
+
+```{r}
+s2.dm <- read_csv(here::here("data/tables/DiffMap_Stage2.csv"))
+s2.md <- all@meta.data %>% filter(stage == "Stage2")
+points <- sample(1:nrow(s2.md), size = 10000)
+
+
+```
+
+```{r, fig.width=12, fig.height=6}
+(ggplot((s2.dm %>% mutate(Ann = s2.md$ann))[points,] ) +
+  geom_point(aes(DC1, DC2, colour = Ann))) + theme_linedraw()
+
+(ggplot((s2.dm %>% mutate(Ann = s2.md$ann))[points,] %>% filter(Ann %in% c("PSM", "IM_1", "IM_2", "IM_3"))) +
+  geom_point(aes(DC1, DC2, colour = Ann))) + theme_linedraw()
+
+
+```
+
+```{r}
+blist <- list()
+for (i in 3:5){
+  blist[[paste0("chir", i)]] <- 
+  map(1:6, ~
+(ggplot((s2.dm %>% mutate(Stage = (s2.md)$stage,
+                                  Ann = (s2.md)$ann,
+                            GF = s2.md$gf,
+                            CHIR = s2.md$chir)) %>% 
+          filter(GF == c("4F", "4F200", "4FA", "4FC", "4FL", "4E")[.x],
+                 CHIR == paste0(i, "c"))) +
+  geom_point(aes(DC1, DC2, colour = Ann), size = 0.2)) +
+  lims(x = c(-0.01, 0.02), y = c(-0.05, 0.015)) +
+  ggtitle(paste0(i, "c", c("4F", "4F200", "4FA", "4FC", "4FL", "4E")[.x])) +
+  geom_hline(yintercept=0) + geom_vline(xintercept=0) +
+  theme_linedraw()
+)
+}
+blist
+
+```
+
+
+Stage 3 alone
+
+```{r}
+s3.dm <- read_csv("data/tables/DiffMap_Stage3.csv")
+s3.md <- all@meta.data %>% filter(stage == "Stage3")
+points <- sample(1:nrow(s3.md), size = 5000)
+stage <- s3.md$stage
+ann <- s3.md$ann
+
+```
+
+```{r, fig.width=12, fig.height=6}
+(ggplot((s3.dm %>% mutate(Ann = ann))[points,]) +
+  geom_point(aes(DC1, DC2, colour = Ann))) + 
+
+(ggplot((s3.dm %>% mutate(Ann = ann))[points,]) +
+  geom_point(aes(DC3, DC1, colour = Ann)))
+```
+
+
+stage 2 to stage 3
+
+```{r}
+s2to3.dm <- read_csv("data/tables/DiffMap_Stages23.csv")
+#s2to3.dm <- read_csv("data/tables/DiffMap_PC_Stages23.csv")
+s2to3.md <- all@meta.data %>% filter(stage %in% c("Stage2", "Stage3"))
+points <- sample(1:nrow(s2to3.md), size = 5000)
+```
+
+```{r, fig.width=16, fig.height=6}
+(ggplot((s2to3.dm %>% mutate(Ann = s2to3.md$ann))[points,]) +
+  geom_point(aes(DC1, DC2, colour = Ann))) + 
+
+(ggplot((s2to3.dm %>% mutate(Ann = s2to3.md$ann))[points,]) +
+  geom_point(aes(DC3, DC1, colour = Ann)))
+```
+
+```{r}
+plot_ly((s2to3.dm %>% mutate(Ann = s2to3.md$ann))[points,], 
+        type="scatter3d", mode = 'markers',
+        x = ~DC1, 
+        y = ~-DC2,
+        z = ~-DC3,
+        marker = list(opacity = 0.7, size=2),
+        color = s2to3.md$ann[points]) 
+
+```
+
+```{r, fig.width=9, fig.height=4}
+s23dc <- 
+s2to3.dm %>% mutate(ann = s2to3.md$ann, stage = s2to3.md$stage) %>% 
+  group_by(ann) %>%
+  summarise(DC3.mean = mean(DC3),
+            DC2.mean = mean(DC2),
+            DC1.mean = mean(DC1),
+            n = n())
+s23dc
+
+(ggplot((s23dc)) +
+  geom_point(data = (s2to3.dm %>% mutate(Ann = s2to3.md$ann, stage = s2to3.md$stage))[points,], aes(DC1, DC3, colour = stage), alpha = 0.3) +
+    scale_colour_discrete(type = c("#00BF7D", "#00B0F6")) +
+    geom_text_repel(aes(DC1.mean, DC3.mean, label = ann) )) + 
+  theme_linedraw() +
+  theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=15),
+        legend.position = "right",
+        axis.ticks = element_blank())
+```
+
+```{r}
+plot_ly((s23dc), 
+        type="scatter3d", mode = 'markers',
+        x = ~DC1.mean, 
+        y = ~-DC2.mean,
+        z = ~-DC3.mean,
+        marker = list(opacity = 0.7, size=10),
+        color = s23dc$ann) 
+```
+
+
+### stage 3 to stage 4
+
+```{r}
+s3to4.dm <- read_csv("data/tables/DiffMap_Stages34.csv")
+#s3to4.dm <- read_csv("data/tables/DiffMap_PC_Stages34.csv")
+s3to4.md <- all@meta.data %>% filter(stage %in% c("Stage3", "Stage4"))
+points <- sample(1:nrow(s3to4.md), size = 5000)
+```
+
+```{r, fig.width=12, fig.height=6}
+(ggplot((s3to4.dm %>% mutate(Ann = s3to4.md$ann))[points,]) +
+  geom_point(aes(DC1, DC2, colour = Ann))) + 
+
+(ggplot((s3to4.dm %>% mutate(Ann = s3to4.md$ann))[points,]) +
+  geom_point(aes(DC3, DC1, colour = Ann)))
+```
+
+```{r}
+plot_ly((s3to4.dm %>% mutate(Ann = s3to4.md$ann))[points,], 
+        type="scatter3d", mode = 'markers',
+        x = ~DC1, 
+        y = ~-DC2,
+        z = ~-DC3,
+        marker = list(opacity = 0.7, size=2),
+        color = s3to4.md$ann[points]) 
+```
+
+```{r}
+s34dc <- 
+s3to4.dm %>% mutate(ann = s3to4.md$ann) %>% 
+  group_by(ann) %>%
+  summarise(DC3.mean = mean(DC3),
+            DC2.mean = mean(DC2),
+            DC1.mean = mean(DC1),
+            n = n())
+s34dc
+
+
+(ggplot((s34dc)) +
+  geom_point(data = (s3to4.dm %>% mutate(Ann = s3to4.md$ann))[points,], aes(DC3, DC2, colour = Ann), alpha = 0.3) +
+    geom_text(aes(DC3.mean, DC2.mean, label = ann) ))
+```
+
+
+Distances for CAT analysis, move to figure 6 when ready.
+
+```{r}
+
+df <- read_csv("data/tables/abs_distances_table_with_significances_20240205.csv")
+head(df)
+
+df.theme <- theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+                  panel.background = element_rect(fill = "white"),
+                  panel.grid = element_blank())
+
+df$Query <- factor(df$oc, levels = c(paste0(unique((all@meta.data %>% filter(stage == "Stage1"))$ann), "_t1"),
+                                     paste0(unique((all@meta.data %>% filter(stage == "Stage2"))$ann), "_t2"),
+                                     paste0(unique((all@meta.data %>% filter(stage == "Stage3"))$ann), "_t3"),
+                                     paste0(unique((all@meta.data %>% filter(stage == "Stage4"))$ann), "_t4")))
+df$Reference <- factor(df$c_j, levels = c(paste0(unique((all@meta.data %>% filter(stage == "Stage1"))$ann), "_t1"),
+                                         paste0(unique((all@meta.data %>% filter(stage == "Stage2"))$ann), "_t2"),
+                                         paste0(unique((all@meta.data %>% filter(stage == "Stage3"))$ann), "_t3"),
+                                         paste0(unique((all@meta.data %>% filter(stage == "Stage4"))$ann), "_t4")))
+df$Distance <- df$`<d_ij>`
+df$Sig <- 1/((df$q_ij)+1)
+
+substrRight <- function(x, n){
+  substr(x, nchar(x)-n+1, nchar(x))
+}
+
+df$Query.stage <- substrRight(as.character(df$Query), 2)
+df$Reference.stage <- substrRight(as.character(df$Reference), 2)
+df$QSequalsRS <- df$Query.stage == df$Reference.stage
+```
+
+
+```{r, fig.width=14, fig.height=10, dpi=600}
+ggplot() +
+  geom_point(data = df[df$QSequalsRS,], aes(Reference, Query, colour = Distance, size = Sig)) +
+  scale_colour_gradient2(low = "navy", mid = "lightblue", high = "grey", midpoint = 75,
+                         breaks = c(0, 75, 150),
+                         limits = c(0, 201)) +
+
+  
+  ggnewscale::new_scale_color() + # makes a new scale for the next part of the plot. pretty cool function!
+  
+  geom_point(data = df[!df$QSequalsRS,], aes(Reference, Query, colour = Distance, size = Sig)) +
+  scale_colour_gradient2(low = "darkgreen", mid = "lightgreen", high = "grey", midpoint = 75,
+                         breaks = c(0, 75, 150),
+                         limits = c(0, 201)) +
+  df.theme +
+  theme(axis.title = element_text(size=20),
+        axis.text = element_text(size=12))
+```
+
+try size as distance metric and colour as significance
+
+```{r, fig.width=14, fig.height=10, dpi=600}
+ggplot() +
+  geom_point(data = df[df$QSequalsRS,], aes(Reference, Query, colour = Sig, size = 1/Distance)) +
+  scale_colour_gradient2(low = "grey", mid = "lightblue", high = "navy", midpoint = 0.6,
+                         breaks = c(0, 0.5, 1),
+                         limits = c(0, 1)) +
+
+  
+  ggnewscale::new_scale_color() + # makes a new scale for the next part of the plot. pretty cool function!
+  
+  geom_point(data = df[!df$QSequalsRS,], aes(Reference, Query, colour = Sig, size = 1/Distance)) +
+  scale_colour_gradient2(low = "grey", mid = "lightgreen", high = "darkgreen", midpoint = 0.6,
+                         breaks = c(0, 0.5, 1),
+                         limits = c(0, 1)) +
+  df.theme +
+  theme(axis.title = element_text(size=20),
+        axis.text = element_text(size=12))
+```
+

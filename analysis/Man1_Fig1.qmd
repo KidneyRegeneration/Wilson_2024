@@ -1,0 +1,93 @@
+---
+title: "Manuscript 1 Figure 2"
+date: "`r Sys.Date()`"
+author: "Sean Wilson"
+output:
+  rmdformats::readthedown:
+  highlight: kate
+  toc: true
+#output:
+#  prettydoc::html_pretty:
+#    theme: cayman
+#    highlight: github
+#    toc: true
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_dir = here::here("docs/"))})
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(rmdformats)
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+source(here::here("code/general_r_functions.R"))
+source(here::here("code/project_functions.R"))
+source(here::here("code/circle_plot.R"))
+source(here::here("code/datavis.R"))
+library(plotly)
+seed <- 250395
+## Global options
+options(max.print="1000")
+opts_chunk$set(echo=TRUE,
+	             cache=FALSE,
+               cache.lazy = FALSE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE,
+               fig.width = 9,
+               fig.height = 6,
+               dpi = 600)
+opts_knit$set(width=500, root.dir = here::here())
+options(future.globals.maxSize = Inf)
+
+```
+
+## Manuscript 1, Figure 1
+
+```{r}
+all <- read_rds("data/rds/Wilson_kidney_organoid_atlas.rds")
+all$gf <- gsub("G11", "G", all$gf)
+all$condition <- gsub("G11", "G", all$condition)
+```
+
+
+```{r}
+gcols <-ggplotColors(5)
+DimPlot(all, group.by = "stage", label=T) + 
+  theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=20),
+        axis.ticks = element_blank())
+```
+
+
+```{r}
+fs19.dm <- read_csv("data/tables/DiffMap_Stage1234.csv")
+fs19.md.noipsc <- all@meta.data %>% filter(stage != "iPSC")
+points <- sample(1:nrow(fs19.md.noipsc), size = 20000)
+```
+
+
+
+
+```{r, fig.width=10, fig.height=6}
+(ggplot((fs19.dm %>% mutate(Stage = fs19.md.noipsc$stage))[,]) +
+  geom_point(aes(-DC1, -DC2, colour = Stage), alpha = 0.3)+
+   scale_colour_manual(values = gcols[2:5])+ 
+   theme_bw() +
+  theme(axis.text = element_text(size=0),
+        axis.title = element_text(size=10),
+        legend.text = element_text(size=20),
+        axis.ticks = element_blank()))
+
+(ggplot((fs19.dm %>% mutate(Stage = fs19.md.noipsc$stage))[,]) +
+  geom_point(aes(-DC3, -DC2, colour = Stage), alpha = 0.3) +
+   scale_colour_manual(values = gcols[2:5])+ 
+   theme_bw() +
+  theme(axis.text = element_text(size=0),
+        legend.text = element_text(size=20),
+        axis.ticks = element_blank()))
+```
+
+

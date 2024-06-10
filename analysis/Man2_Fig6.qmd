@@ -1,0 +1,328 @@
+---
+title: "Man2_Figure6"
+date: "`r Sys.Date()`"
+author: "Sean Wilson"
+output:
+  rmdformats::readthedown:
+  highlight: kate
+  toc: true
+#output:
+#  prettydoc::html_pretty:
+#    theme: cayman
+#    highlight: github
+#    toc: true
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_dir = here::here("docs/"))})
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(rmdformats)
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(ggrepel)
+source(here::here("code/general_r_functions.R"))
+source(here::here("code/project_functions.R"))
+source(here::here("code/circle_plot.R"))
+source(here::here("code/datavis.R"))
+library(plotly)
+seed <- 250395
+## Global options
+options(max.print="1000")
+opts_chunk$set(echo=FALSE,
+	             cache=FALSE,
+               cache.lazy = FALSE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE,
+               fig.width = 9,
+               fig.height = 6,
+               dpi = 600,
+               echo=FALSE)
+opts_knit$set(width=500, root.dir = here::here())
+options(future.globals.maxSize = Inf)
+
+```
+
+## Whole dataset
+
+```{r}
+all <- read_rds("data/rds/Wilson_kidney_organoid_atlas.rds")
+s2 <- read_rds("data/rds/Stage2.rds")
+s3 <- read_rds("data/rds/Stage3.rds")
+s4 <- read_rds("data/rds/Stage4.rds")
+```
+
+```{r}
+all$gf <- gsub("G11", "G", all$gf)
+all$condition <- gsub("G11", "G", all$condition)
+
+s4$gf <- gsub("G11", "G", s4$gf)
+s4$condition <- gsub("G11", "G", s4$condition)
+
+s3$gf <- gsub("G11", "G", s3$gf)
+s3$condition <- gsub("G11", "G", s3$condition)
+```
+
+
+## Bar chart differences
+
+
+```{r}
+df <- map(c("3c", "4c", "5c"), ~
+ComponentHeatMapDF(s3, identity = "condition", component = "ann") %>% 
+  transmute(Identity = Identity, Component = Component, Pct = Pct) %>% 
+  filter(Identity %in% c(paste0(.x, c("4F", "4FG")))) %>% 
+  pivot_wider(names_from = c("Identity"), values_from = "Pct") %>% 
+  `colnames<-`(c("Component", "Control", "Test")) %>% 
+  mutate(Difference = Test-Control,
+         CHIR = .x) 
+)
+
+df <- bind_rows(df[[1]], df[[2]]) %>% bind_rows(df[[3]])
+```
+
+
+```{r, fig.width=5, fig.height=6}
+df %>% 
+  mutate(Component = factor(Component, levels = c("NPC", "Nephrogenic", "Nephron", "Stroma",
+                                                  "Mesenchyme_1", "Mesenchyme_2", "Mesenchyme_3",
+                                                  "Neural", "Cycling", "NMP_tNC", "NMP_NP", "Myotome"))) %>% 
+  ggplot() +
+  #  geom_segment( aes(x=Component, xend=Component, y=ifelse(Control>16, 16, Control), yend=ifelse(Test>16, 16, Test)), color="black") +
+  #geom_point( aes(x=Component, y=Control), color="red", size=3 ) +
+  #geom_point( aes(x=Component, y=Test), color="blue", size=3 ) +
+  geom_col(aes(Difference, Component, fill = CHIR), colour = "black", position = "dodge", width = 0.8) +
+  #scale_y_log10() +
+  #coord_flip()+
+  theme(
+    legend.position = "bottom",
+  ) +
+  scale_fill_discrete(type = cc) +
+  #xlab("") +
+  #ylab("Population %") +
+  xlim(c(-14, 14)) +
+  theme_light() +
+  theme(legend.position = "bottom",
+        axis.text.y = element_text(size=15))
+
+```
+
+
+```{r}
+df2 <- map(c("3c", "4c", "5c"), ~
+ComponentHeatMapDF(s4, identity = "condition", component = "ann") %>% 
+  transmute(Identity = Identity, Component = Component, Pct = Pct) %>% 
+  filter(Identity %in% c(paste0(.x, c("4F", "4FG")))) %>% 
+  pivot_wider(names_from = c("Identity"), values_from = "Pct") %>% 
+  `colnames<-`(c("Component", "Control", "Test")) %>% 
+  mutate(Difference = Test-Control,
+         CHIR = .x) 
+)
+
+df2 <- bind_rows(df2[[1]], df2[[2]]) %>% bind_rows(df2[[3]])
+```
+
+
+```{r, fig.width=5, fig.height=6}
+df2 %>% 
+  mutate(Component = factor(Component, levels = c("NPC", "Metanephric", "EN", "EDT", "EPT", "LOH", "DT", "PT", "PEC", "EPod", "Pod", 
+                                                  "SPC", "CS", "MS", "MesS",
+                                                  "Stalled_NP_MM", "PRRX1/2-PreMuscle", "Satellite-cells", "Myocyte-like",
+                                                  "Neural-like", "Glia-like", "Astrocyte-like",
+                                                  "UTip", "UIS", "UOS", "Endo"
+                                                  ))) %>% 
+  ggplot() +
+  #  geom_segment( aes(x=Component, xend=Component, y=ifelse(Control>16, 16, Control), yend=ifelse(Test>16, 16, Test)), color="black") +
+  #geom_point( aes(x=Component, y=Control), color="red", size=3 ) +
+  #geom_point( aes(x=Component, y=Test), color="blue", size=3 ) +
+  geom_col(aes(Difference, Component, fill = CHIR), colour = "black", position = "dodge", width = 0.8) +
+  #scale_y_log10() +
+  #coord_flip()+
+  theme(
+    legend.position = "bottom",
+  ) +
+  scale_fill_discrete(type = cc) +
+  #xlab("") +
+  #ylab("Population %") +
+  xlim(c(-21, 14)) +
+  theme_light() +
+  theme(legend.position = "none",
+        axis.text.y = element_text(size=12))
+
+```
+
+## DEGs between conditions
+
+```{r}
+degs <- map(c("3c", "4c", "5c"), ~
+              read_csv(paste0("data/tables/GDF11_control_DEGs_all_", .x, ".csv")) %>% 
+                         mutate(diff = abs(pct.1-pct.2))
+)
+```
+
+
+```{r, fig.height=12, fig.width=9}
+
+# add labels
+map2(degs, list(c("LIN28A", "CBLN1", "METRN", "IGFBP5", "SCX", "VIM"),
+               c("LIN28A", "CBLN1", "METRN", "TAGLN", "IGFBP5", "SCX", "VIM"),
+               c("LIN28A", "CBLN1", "METRN", "TAGLN", "IGFBP5", "SCX", "VIM")), ~.x %>% ggplot() +
+      geom_point(aes(avg_log2FC, diff, colour = p_val_adj>0.05),
+                 size = ifelse(.x$p_val_adj<0.05, 1, 0.1))+
+      geom_point(data = .x %>% filter(rowname %in% .y),
+                 aes(avg_log2FC, diff, colour = "Neural"),
+                 size = 3)+
+  geom_text(data = .x %>% filter(rowname %in% .y), 
+            aes(avg_log2FC*1.05, diff*1.05), size = 6,
+    label=(.x %>% filter(rowname %in% .y))$rowname, 
+    #nudge_x = 0, nudge_y = 0.01, 
+    check_overlap = T
+  ) +
+    theme_linedraw() +
+    lims(x = c(-0.7, 1.5), y = c(0, 0.3))
+  ) %>% wrap_plots(ncol=1, guides = "collect")
+```
+
+
+
+find intersection of genes
+
+```{r}
+degs.up <- map(degs, ~
+                 .x %>% filter(avg_log2FC > 0.2))
+intersect.up <- intersect(degs.up[[2]]$rowname, degs.up[[3]]$rowname) 
+
+intersect.up
+
+degs.down <- map(degs, ~
+                 .x %>% filter(avg_log2FC < -0.2))
+intersect.down <- intersect(degs.down[[2]]$rowname, degs.down[[3]]$rowname)
+
+intersect.down
+```
+
+make upset plot
+
+```{r}
+degs.upset <- map2(degs, c("3c", "4c", "5c"), ~.x %>% filter(p_val_adj<0.05) %>% 
+                    transmute(gene = rowname,
+                              chir = .y, 
+                              avg_log2FC = avg_log2FC,
+                              deg = ifelse(avg_log2FC>0, paste0(.y, "_up"), paste0(.y, "_down"))))
+degs.upset <- bind_rows(degs.upset[[1]], degs.upset[2:3])
+deg.id <- unique(degs.upset$deg)
+degs.upset <- map(unique(degs.upset$deg), ~ filter(degs.upset, deg == .x)$gene)
+names(degs.upset) <- deg.id
+```
+
+
+```{r, fig.width=6, fig.height=4}
+UpSetR::fromList(input = degs.upset) %>% 
+  UpSetR::upset(order.by = "freq", nsets = 6,
+                queries = list(list(query = UpSetR::intersects,
+                               params = list("3c_up", "4c_up", "5c_up"),
+                               color = "violet",
+                               active = T),
+                               list(query = UpSetR::intersects,
+                               params = list("3c_down", "4c_down", "5c_down"),
+                               color = "purple",
+                               active = T),
+                               list(query = UpSetR::intersects,
+                               params = list("4c_up", "5c_up"),
+                               color = "orange",
+                               active = T),
+                               list(query = UpSetR::intersects,
+                               params = list("4c_down", "5c_down"),
+                               color = "brown",
+                               active = T)))
+
+
+```
+
+
+
+```{r, fig.height=9, fig.width=9}
+
+FeaturePlot(s3[, s3$gf %in% c("4F", "4FG")], features = c("LIN28A", "CBLN1", "IGFBP5"), pt.size = 1, order = T, split.by = "gf", ncol = 2) & NoAxes() & theme(legend.position = "bottom")
+
+```
+
+```{r, fig.height=6, fig.width=4}
+StrDotPlot(s3[, s3$gf %in% c("4F", "4FG")], features = c("LIN28A", "CBLN1", "METRN", "TAGLN", "IGFBP5", "SCX", "VIM"), 
+           group.by = "condition", dot.scale = 10)
+
+```
+
+```{r, fig.height=3.5, fig.width=7}
+StrDotPlot(s3[, s3$gf %in% c("4F", "4FG")], features = c("LIN28A", "CBLN1", "METRN", "TAGLN", "IGFBP5", "SCX", "VIM"), 
+           group.by = "condition", dot.scale = 10) + 
+  coord_flip() +
+  theme(legend.position = "bottom")
+
+```
+
+
+# run on topfun:
+
+1) most significant genes up or down shared in 3, 4, 5 (small list)
+
+```{r}
+degs.up <- map(degs, ~
+                 .x %>% filter(p_val_adj < 0.05, avg_log2FC > 0))
+intersect.up <- intersect(degs.up[[2]]$rowname, degs.up[[3]]$rowname) %>% 
+  intersect(degs.up[[1]]$rowname)
+
+intersect.up
+
+degs.down <- map(degs, ~
+                 .x %>% filter(p_val_adj < 0.05, avg_log2FC < 0))
+intersect.down <- intersect(degs.down[[2]]$rowname, degs.down[[3]]$rowname) %>% 
+  intersect(degs.down[[1]]$rowname)
+
+intersect.down
+
+write_csv(data.frame(gene = c(intersect.up, intersect.down), 
+                     direction = c(rep("up", length(intersect.up)),
+                                   rep("down", length(intersect.down)))),
+          "data/tables/DEGS_Intersect3c4c5c.csv")
+```
+
+
+2) most sig genes up or down shared in 4, 5 (medium list)
+
+```{r}
+degs.up <- map(degs, ~
+                 .x %>% filter(p_val_adj < 0.05, avg_log2FC > 0))
+intersect.up <- intersect(degs.up[[2]]$rowname, degs.up[[3]]$rowname) 
+
+intersect.up
+
+degs.down <- map(degs, ~
+                 .x %>% filter(p_val_adj < 0.05, avg_log2FC < 0))
+intersect.down <- intersect(degs.down[[2]]$rowname, degs.down[[3]]$rowname) 
+
+intersect.down
+
+write_csv(data.frame(gene = c(intersect.up, intersect.down), 
+                     direction = c(rep("up", length(intersect.up)),
+                                   rep("down", length(intersect.down)))),
+          "data/tables/DEGS_Intersect4c5c.csv")
+```
+
+
+
+```{r}
+degs.new <- FindAllMarkers(SetIdent(s3[, s3$gf %in% c("4F", "4FG")], value = "gf"), only.pos=T, test.use = "t", logfc.threshold = 0.1)
+degs.new
+```
+
+
+```{r}
+write_csv(degs.new,
+          "data/tables/DEGS_FvsFG_allS3.csv")
+```
+
+

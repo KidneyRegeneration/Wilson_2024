@@ -1,0 +1,442 @@
+---
+title: "Stage 3 azimuth"
+date: "`r Sys.Date()`"
+author: "Sean Wilson"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+    toc: true
+knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_dir = "../docs/")})
+---
+
+# set up count matrices
+
+```{r}
+library(tidyverse)
+library(Seurat)
+source(here::here("code/general_r_functions.R"))
+source(here::here("code/project_functions.R"))
+source(here::here("code/circle_plot.R"))
+source(here::here("code/datavis.R"))
+```
+
+Load the stage 3 data that was classified by devkidcc
+take both the classified and unclassified cells seperately
+Reanalyse the unclassified cells with clustering and deg
+subset and project onto azimuth human dev atlas and human kidney atlas
+subset classified cells and project on to azimuth human dev atlas and human kidney atlas
+
+```{r}
+s3 <- read_rds(here::here("output/rds/Stage3_Analysis.rds"))
+devorg.un <- read_rds(here::here("output/rds/devorg_un.rds"))
+
+```
+
+
+
+
+```{r, fig.width=9, fig.height=7}
+DimPlot(devorg.un, group.by = "SCT_snn_res.0.1")
+
+```
+
+
+```{r}
+predictions <- read.delim(here::here('output/tables/DevOrg_Un_Azimuth_Out.tsv'), row.names = 1)
+predictions
+subset.devorg.un <- devorg.un[, rownames(predictions)]
+subset.devorg.un <- AddMetaData(
+	object = subset.devorg.un,
+	metadata = predictions)
+
+```
+
+```{r, fig.width=6, fig.height=5}
+subset.devorg.un$predicted.annotation.l1 <- gsub(" cells", "", subset.devorg.un$predicted.annotation.l1)
+subset.devorg.un$unassigned.clusters <- factor(subset.devorg.un$SCT_snn_res.0.1, levels = unique(subset.devorg.un$SCT_snn_res.0.1))
+ComponentHeatMapDF(subset.devorg.un, identity = "unassigned.clusters", component = "predicted.annotation.l1") %>% 
+  ggplot() +
+  geom_tile(aes(Identity, Component, fill = Pct)) +
+  viridis::scale_fill_viridis() + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))
+  
+subset.devorg.un@meta.data %>% filter(!is.na(predicted.annotation.l1)) %>% 
+  ggplot() +
+  geom_jitter(aes(predicted.annotation.l1.score, predicted.annotation.l1), size = 0.1) +
+  #geom_violin(aes(predicted.annotation.l1.score, predicted.annotation.l1, fill = predicted.annotation.l1, alpha=0.5)) +
+  theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1)) + NoLegend()
+```
+
+```{r}
+devorg.un.markers <- map_dfr(1:length(unique(devorg.un$SCT_snn_res.0.1)), ~readxl::read_xls(path = here::here("output/tables/devorg_unassigned_markers.xls"), sheet = .x))
+
+```
+
+
+```{r, fig.width=5, fig.height=7}
+devorg.un.markers %>% dplyr::group_by(cluster) %>% top_n(15, pct.1-pct.2) -> devorgun.top15
+StrDotPlot(devorg.un, features = unique((devorgun.top15 %>% filter(cluster==3))$gene), group.by = "SCT_snn_res.0.1") + coord_flip()
+```
+
+
+pseudobulk, expression of top 3000 variable genes
+
+```{r}
+pseudobulk <- function(seu, ident) {
+  counts <- data.frame(row.names = rownames(seu@assays$RNA@counts))
+  for (i in 1:length(unique(seu@meta.data[,ident]))){
+    temp.seurat <- seu[, seu@meta.data[,ident] == unique(seu@meta.data[,ident])[i]]
+    #temp.seurat <- subset(matorg, ident = unique(matorg$DKCC)[i])
+    temp.counts <- as.data.frame(temp.seurat@assays$RNA@counts)
+    temp.bulk <- data.frame(rowSums(temp.counts))
+    colnames(temp.bulk) <- c(unique(as.character(seu@meta.data[,ident]))[i])
+    counts <- cbind(counts, temp.bulk)
+  }
+  return(counts)
+}
+```
+
+
+```{r}
+s3.un.res01.pb <- pseudobulk(devorg.un, "SCT_snn_res.0.1")
+colnames(s3.un.res01.pb) <- paste0("S3_un_", colnames(s3.un.res01.pb))
+```
+
+```{r, fig.width=6, fig.height=9}
+s3@assays$SCT@var.features -> plotgenes
+NMF::aheatmap(s3.un.res01.pb[plotgenes[1:100],], border_color = "black", treeheight = c(0, 50), scale = "row")
+
+```
+
+not much help.
+
+```{r, fig.width=5, fig.height=7}
+StrDotPlot(devorg.un, features = s3@assays$SCT@var.features[1:100], group.by = "SCT_snn_res.0.1") + coord_flip()
+```
+
+
+
+
+
+
+```{r, fig.height=4.5, fig.width=24}
+subset.devorg.un$azimuth <- subset.devorg.un$predicted.annotation.l1
+DimPlot(subset.devorg.un[, subset.devorg.un$azimuth %in% c("Acinar", "Metanephric", "Neuroendocrine", "Erythroblasts")], 
+        group.by = "SCT_snn_res.0.1", split.by = "azimuth", ncol=2)
+FeaturePlot(subset.devorg.un[, subset.devorg.un$azimuth %in% c("Acinar", "Metanephric", "Neuroendocrine", "Erythroblasts")], 
+        features = "predicted.annotation.l1.score", split.by = "azimuth", ncol = 2, cols = vcol)
+FeaturePlot(subset.devorg.un[, subset.devorg.un$azimuth %in% c("Acinar", "Metanephric", "Neuroendocrine", "Erythroblasts")], 
+        features = "predicted.annotation.l1.score", split.by = "azimuth", ncol = 2, cols = vcol)
+FeaturePlot(subset.devorg.un[, subset.devorg.un$azimuth %in% c("Acinar", "Metanephric", "Neuroendocrine", "Erythroblasts")], 
+        features = "predicted.annotation.l1.score")
+```
+
+GO terms shared and unique
+
+```{r}
+c0.goterms <- readxl::read_xlsx(here::here("output/tables/Stage3_un_c0_GOterms.xlsx"))
+c0.goterms$cluster <- "C0"
+c1.goterms <- readxl::read_xlsx(here::here("output/tables/Devorg_un_c1_GOterms.xlsx"), col_names = F)
+c1.goterms$cluster <- "C1"
+colnames(c1.goterms) <- colnames(c0.goterms)
+c2.goterms <- readxl::read_xlsx(here::here("output/tables/Stage3_un_c2_GOterms.xlsx"))
+c2.goterms$cluster <- "C2"
+c3.goterms <- readxl::read_xlsx(here::here("output/tables/Devorg_un_c3_GOterms.xlsx"), col_names = F)
+c3.goterms$cluster <- "C3"
+colnames(c3.goterms) <- colnames(c0.goterms)
+c4.goterms <- readxl::read_xlsx(here::here("output/tables/Devorg_un_c4_GOterms.xlsx"))
+c4.goterms$cluster <- "C4"
+
+```
+
+```{r}
+dev.un.goterms <- c0.goterms %>% 
+  bind_rows(c1.goterms) %>% 
+  bind_rows(c2.goterms) %>% 
+  bind_rows(c3.goterms) %>% 
+  bind_rows(c4.goterms) %>% mutate(cluster = factor(cluster, levels = c("C0", "C1", "C2", "C3", "C4")), Description = factor(Description))
+```
+
+```{r}
+dev.un.goterms$Description %>% table() %>% as.data.frame() %>% arrange(-Freq)
+dev.un.goterms <- 
+dev.un.goterms %>% mutate(Description = factor(Description, levels = rev((dev.un.goterms$Description %>% table() %>% as.data.frame() %>% arrange(-Freq))$`.`)))
+dev.un.goterms.filter <- dev.un.goterms %>% filter(Count > 5, `%` > 5, `Log10(P)` < -5)
+dev.un.goterms.filter <- dev.un.goterms %>% dplyr::group_by(cluster) %>% mutate(Description = as.character(Description)) %>% top_n(10, `%`) %>% arrange(cluster) %>%
+  mutate(Description = factor(Description, levels = rev(unique(Description))))
+dev.un.goterms.filter <- dev.un.goterms %>% filter(Description %in% unique(dev.un.goterms.filter$Description)) %>% arrange(cluster)
+```
+
+```{r, fig.height=9, fig.width=8}
+ggplot(dev.un.goterms.filter) +
+  geom_point(aes(cluster, Description, size = abs(`Log10(P)`), colour = `%`)) +
+  scale_color_viridis(option = "inferno", end = 0.8)
+```
+
+### Annotation
+
+
+```{r}
+all.meta <- devorg.un@meta.data %>% mutate(SCT_snn_res.0.1 = as.character(SCT_snn_res.0.1)) %>% 
+    mutate(ann = case_when(SCT_snn_res.0.1 == "0" ~ "S3.NR-Mes",
+                           SCT_snn_res.0.1 == "1" ~ "S3.Met-like",
+                           SCT_snn_res.0.1 == "2" ~ "S3.UMSC",
+                           SCT_snn_res.0.1 == "3" ~ "S3.Met",
+                           SCT_snn_res.0.1 == "4" ~ "S3.NMP-like",
+                           TRUE ~ SCT_snn_res.0.1)) %>% 
+  mutate(ann.long = case_when(SCT_snn_res.0.1 == "0" ~ "S3.non_renal_mesenchyme",
+                           SCT_snn_res.0.1 == "1" ~ "S3.metanephric-like",
+                           SCT_snn_res.0.1 == "2" ~ "S3.unidentified_mesenchymal_stromal_cell",
+                           SCT_snn_res.0.1 == "3" ~ "S3.metanephric",
+                           SCT_snn_res.0.1 == "4" ~ "S3.neuromesodermal_progenitor-like",
+                           TRUE ~ SCT_snn_res.0.1)) %>% mutate(stage = "Stage_3") %>% rownames_to_column() %>% 
+  dplyr::select(c("rowname", "ann", "ann.long", "stage"))
+
+devorg.un$unassigned <- all.meta$ann
+devorg.un$unassigned.long <- all.meta$ann.long
+
+
+write_csv(all.meta, here::here("output/tables/Stage3_Unassigned_Annotation_df.csv"))
+```
+
+```{r, fig.width=9, fig.height=7}
+DimPlot(devorg.un, group.by = "unassigned", label = T, label.size=6)
+```
+
+```{r}
+devorg.un <- read_rds(here::here("output/rds/devorg_un.rds"))
+
+```
+
+
+```{r}
+data.frame(ann = paste0("S3.", s3$DKCC), 
+           ann.long = paste0("S3.", s3$LineageID),
+           stage = "Stage_3",
+           rowname = rownames(s3@meta.data)) %>% write_csv(here::here("output/tables/Stage3_Assigned_Annotation.csv"))
+```
+
+
+
+## Stage 4
+
+```{r, include=FALSE}
+org.un <- read_rds(here::here("output/rds/matorg_un.rds"))
+```
+
+```{r, fig.width=9, fig.height=7}
+DimPlot(org.un, group.by = "SCT_snn_res.0.1", label = T)
+
+```
+
+```{r}
+org.un.markers <- map_dfr(1:length(unique(org.un$SCT_snn_res.0.1)), ~readxl::read_xls(path = here::here("output/tables/matorg_unassigned_markers.xls"), sheet = .x))
+
+```
+
+```{r, fig.width=16}
+map(0:13, ~StrDotPlot(org.un, group.by = "SCT_snn_res.0.1",
+                      features = (org.un.markers %>% filter(cluster==.x) %>% arrange(-Diff))$gene[1:25]))
+```
+
+
+```{r}
+c("SOX2", "ZIC2", "GDF10", "MSX1", "PCDH8", "SFRP2",
+  "DCN", "PITX2", "MSC", "CITED1", "FGF9", "MYOD1", "MYL1",
+  "DNAJB4", "STX3", "VGF", "GADD45B", "HSPA1B",
+  "HIST1H1B", "HIST1H1D", "AURKB", "CDK1", "TOP2A",
+  "COL3A1", "PRRX1", "PRRX2", "SIX1", "TGFB2", "MEOX2", "PDGFRA", #near identical expressino with 3
+  "TFAP2A", "SOX10", "MLANA", "PMEL", "BCAN", "TFAP2B", "SNAI2", #near identical to 6
+  "CD44", "SLC7A8", "SLC6A6", "SLC6A15", #more unique to 5
+  "ELAVL3", "ELAVL4", "DCX", "ELAVL2", "STMN2", "POU2F2", "KIF5C", #identical to 12
+  "WT1", "FOXC2", "TCF21", "MAFB", "PAX2", "EPCAM", "PAX8",
+  "RPSO3", "PENK", "SMOC1", "MSX1", "SPARCL1", "CD83", "ALDH1A2", "TSPAN2",
+  "HES5", "CXCR4", "CRB2", "PAX6", "SOX1", "FAM181A", "NTRK2", "FGFBP3", "LINC00461", # slightly similar to 9
+  "CLDN3", "CLDN4", "EPCAM", "HNF1B", "EMX2",
+  "IGFBPL1", "LHX9", "ADCYAP1", "BARHL1", "BARHL2",
+  "LECT1", "MATN4", "EPYC", "COL11A2", "MGP", "COL9A1", "COL9A3", "DLK1") 
+
+c("SOX2", "ZIC2", "GDF10","MSX1", "PCDH8", 
+"DCN", "MSC", "CITED1", "MYOD1", "MYL1",
+"DNAJB4", "STX3", "VGF", "EPCAM",
+"HIST1H1B", "HIST1H1D", 
+"COL3A1", "PRRX1", "PRRX2",
+"TFAP2A", "SOX10", "MLANA",
+"CD44", "SLC7A8", "SLC6A6",
+"ELAVL3", "ELAVL4", "DCX", 
+"WT1", "FOXC2", "TCF21", "MAFB", "OLFM3",
+"RSPO3", "PENK", "SMOC1",
+"HES5", "CXCR4", "CRB2", 
+"CLDN3", "CLDN4", "EPCAM", 
+"IGFBPL1", "LHX9", "ADCYAP1",
+"LECT1", "MATN4", "EPYC") -> org.un.filt.markers
+```
+
+```{r, fig.width=16, fig.height=5}
+StrDotPlot(org.un, group.by = "SCT_snn_res.0.1",
+                      features = unique(org.un.filt.markers))
+```
+
+0, 9, 10: astrocyte-like but some different properties
+12: neuron-like (weak) 
+1: muscle satellite cell like
+5,6: ENS glia like with different properties
+3: proliferative metanephric and muscle-like GO TERMS
+8: podocyte-like but epcam expressing - confused? GO TERMS
+11: metanephric epithelium - GO TERMS
+
+2: ? NMP-like, bit of stress signature- GO TERMS
+4: metanephric-like, COL3A1 is often kidney relevant ECM marker, PRRX1/2 is mesoderm/muscle driving
+7: ? neuron-like signatures across the board, strong ELAVL signatures - GO TERMS
+13: potentially metanephric - GO TERMS
+
+
+```{r}
+mat.un.go <- map(1:7,~readxl::read_xlsx(here::here("output/tables/MatOrg_Un_GOterms.xlsx"), sheet = .x) %>% mutate(cluster = factor(c("c2", "c3", "c4", "c7", "c8", "c11", "c13")[.x]), Description = factor(Description)))
+mat.un.go <- bind_rows(mat.un.go)
+```
+
+```{r}
+mat.un.go$Description %>% table() %>% as.data.frame() %>% arrange(-Freq)
+mat.un.go <- 
+mat.un.go %>% mutate(Description = factor(Description, levels = rev((mat.un.go$Description %>% table() %>% as.data.frame() %>% arrange(-Freq))$`.`)))
+mat.un.go.filter <- mat.un.go %>% filter(Count > 5, `%` > 5, `Log10(P)` < -5)
+mat.un.go %>% dplyr::group_by(cluster) %>% top_n(10, Count)
+mat.un.go.filter <- mat.un.go %>% dplyr::group_by(cluster) %>% mutate(Description = as.character(Description)) %>% top_n(10, `%`) %>% arrange(cluster) %>%
+  mutate(Description = factor(Description, levels = rev(unique(Description))))
+mat.un.go.filter <- mat.un.go %>% filter(Description %in% unique(mat.un.go.filter$Description)) %>% arrange(cluster)
+```
+
+```{r, fig.height=12, fig.width=8}
+ggplot(mat.un.go.filter) +
+  geom_point(aes(cluster, Description, size = abs(`Log10(P)`), colour = `%`)) +
+  scale_color_viridis(option = "inferno", end = 0.8)
+```
+
+
+
+```{r}
+predictions <- read.delim(here::here('output/tables/MatOrg_Un_Azimuth_Out.tsv'), row.names = 1)
+predictions
+subset.org.un <- org.un[, rownames(predictions)]
+subset.org.un <- AddMetaData(
+	object = subset.org.un,
+	metadata = predictions)
+
+```
+
+```{r, fig.width=6, fig.height=5}
+subset.org.un$predicted.annotation.l1 <- gsub(" cells", "", subset.org.un$predicted.annotation.l1)
+subset.org.un$unassigned.clusters <- factor(subset.org.un$SCT_snn_res.0.1, levels = unique(subset.org.un$SCT_snn_res.0.1))
+ComponentHeatMapDF(subset.org.un, identity = "unassigned.clusters", component = "predicted.annotation.l1") %>% 
+  ggplot() +
+  geom_tile(aes(Identity, Component, fill = Pct)) +
+  viridis::scale_fill_viridis() + theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))
+  
+subset.org.un@meta.data %>% filter(!is.na(predicted.annotation.l1)) %>% 
+  ggplot() +
+  geom_jitter(aes(predicted.annotation.l1.score, predicted.annotation.l1), size = 0.1) +
+  #geom_violin(aes(predicted.annotation.l1.score, predicted.annotation.l1, fill = predicted.annotation.l1, alpha=0.5)) +
+  theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1)) + NoLegend()
+```
+
+
+```{r, fig.height=4.5, fig.width=24}
+subset.org.un$azimuth <- subset.org.un$predicted.annotation.l1
+DimPlot(subset.org.un[, subset.org.un$azimuth %in% c("Satellite", "Metanephric", "ENS glia", "Astrocytes")], 
+        group.by = "SCT_snn_res.0.1", split.by = "azimuth", ncol=4)
+FeaturePlot(subset.org.un[, subset.org.un$azimuth %in% c("Satellite", "Metanephric", "ENS glia", "Astrocytes")], 
+        features = "predicted.annotation.l1.score", split.by = "azimuth", ncol = 2, cols = vcol)
+FeaturePlot(subset.org.un[, subset.org.un$azimuth %in% c("Squamous epithelial", "Neuroendocrine", "Stromal", "Intestinal epithelial")], 
+        features = "predicted.annotation.l1.score", split.by = "azimuth", ncol = 2, cols = vcol)
+```
+
+```{r, fig.height=8, fig.width=16}
+map(c("Metanephric", "ENS glia", "Astrocytes", "Satellite", "Neuroendocrine", "Stromal"), ~FeaturePlot(subset.org.un[, subset.org.un$azimuth == .x], features = "predicted.annotation.l1.score", split.by = "azimuth", cols = vcol) + NoLegend()) %>%
+  wrap_plots(ncol=3)
+
+
+```
+
+```{r, fig.width=16, fig.height=12}
+DimPlot(subset.org.un,
+        group.by = "azimuth", label = T, repel = T, split.by = "SCT_snn_res.0.1", ncol=5)
+ComponentBar(subset.org.un, identity = "SCT_snn_res.0.1", component = "azimuth", show.pct = T, show.text = 101)
+```
+
+```{r}
+all.meta <- org.un@meta.data %>% mutate(SCT_snn_res.0.1 = as.character(SCT_snn_res.0.1)) %>% 
+    mutate(ann = case_when(SCT_snn_res.0.1 == "0" ~ "S4.Astro-like",
+                           SCT_snn_res.0.1 == "1" ~ "S4.Sat-like",
+                           SCT_snn_res.0.1 == "2" ~ "S4.NMP-like",
+                           SCT_snn_res.0.1 == "3" ~ "S4.Prol-stroma",
+                           SCT_snn_res.0.1 == "4" ~ "S4.MetaMuscle-like",
+                           SCT_snn_res.0.1 == "5" ~ "S4.Glia-like",
+                           SCT_snn_res.0.1 == "6" ~ "S4.Glia-like",
+                           SCT_snn_res.0.1 == "7" ~ "S4.Neural-like",
+                           SCT_snn_res.0.1 == "8" ~ "S4.Pod-like",
+                           SCT_snn_res.0.1 == "9" ~ "S4.Astro-like",
+                           SCT_snn_res.0.1 == "10" ~ "S4.Astro-like",
+                           SCT_snn_res.0.1 == "11" ~ "S4.Pod-like",
+                           SCT_snn_res.0.1 == "12" ~ "S4.Neural-like",
+                           SCT_snn_res.0.1 == "13" ~ "S4.MetaMuscle-like",
+                           TRUE ~ SCT_snn_res.0.1)) %>% 
+  mutate(ann.long = case_when(SCT_snn_res.0.1 == "0" ~ "S4.Astrocyte-like",
+                           SCT_snn_res.0.1 == "1" ~ "S4.Satellite-like",
+                           SCT_snn_res.0.1 == "2" ~ "S4.Neuromesoderm_progenitor-like",
+                           SCT_snn_res.0.1 == "3" ~ "S4.Proliferative-stroma",
+                           SCT_snn_res.0.1 == "4" ~ "S4.Metanephric_muscle-like",
+                           SCT_snn_res.0.1 == "5" ~ "S4.Glia-like",
+                           SCT_snn_res.0.1 == "6" ~ "S4.Glia-like",
+                           SCT_snn_res.0.1 == "7" ~ "S4.Neural-like",
+                           SCT_snn_res.0.1 == "8" ~ "S4.Podocyte-like",
+                           SCT_snn_res.0.1 == "9" ~ "S4.Astrocyte-like",
+                           SCT_snn_res.0.1 == "10" ~ "S4.Astrocyte-like",
+                           SCT_snn_res.0.1 == "11" ~ "S4.Podocyte-like",
+                           SCT_snn_res.0.1 == "12" ~ "S4.Neural-like",
+                           SCT_snn_res.0.1 == "13" ~ "S4.Metanephric_muscle-like",
+                           TRUE ~ SCT_snn_res.0.1)) %>% 
+  mutate(ann.subtype = case_when(SCT_snn_res.0.1 == "0" ~ "S4.Neural",
+                           SCT_snn_res.0.1 == "1" ~ "S4.Muscle",
+                           SCT_snn_res.0.1 == "2" ~ "S4.Neural",
+                           SCT_snn_res.0.1 == "3" ~ "S4.Muscle_Metanephric",
+                           SCT_snn_res.0.1 == "4" ~ "S4.Muscle_Metanephric",
+                           SCT_snn_res.0.1 == "5" ~ "S4.Neural",
+                           SCT_snn_res.0.1 == "6" ~ "S4.Neural",
+                           SCT_snn_res.0.1 == "7" ~ "S4.Neural",
+                           SCT_snn_res.0.1 == "8" ~ "S4.Metanephric",
+                           SCT_snn_res.0.1 == "9" ~ "S4.Neural",
+                           SCT_snn_res.0.1 == "10" ~ "S4.Neural",
+                           SCT_snn_res.0.1 == "11" ~ "S4.Metanephric",
+                           SCT_snn_res.0.1 == "12" ~ "S4.Neural",
+                           SCT_snn_res.0.1 == "13" ~ "S4.Muscle_Metanephric",
+                           TRUE ~ SCT_snn_res.0.1)) %>% rownames_to_column() %>% mutate(stage = "Stage_4") %>% 
+  dplyr::select(c("ann", "ann.long", "ann.subtype", "stage", "rowname"))
+
+org.un$unassigned <- all.meta$ann
+org.un$unassigned.long <- all.meta$ann.long
+org.un$unassigned.subtype <- all.meta$ann.subtype
+write_csv(all.meta, here::here("output/tables/Stage4_Unassigned_Annotation.csv"))
+```
+
+
+```{r, fig.width=10, fig.height=14}
+DimPlot(org.un, group.by = "unassigned", label = T, label.size=5, repel=T)/
+  DimPlot(org.un, group.by = "unassigned.subtype", label = T, label.size=5, repel=T)
+
+```
+
+```{r}
+write_rds(org.un, here::here("output/rds/matorg_un.rds"))
+```
+
+```{r}
+data.frame(ann = paste0("S4.", s4$DKCC), 
+           ann.long = paste0("S4.", s4$LineageID),
+           stage = "Stage_4",
+           rowname = rownames(s4@meta.data)) %>% write_csv(here::here("output/tables/Stage4_Assigned_Annotation.csv"))
+```
+
+
+
+
